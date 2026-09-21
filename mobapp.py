@@ -141,7 +141,7 @@ if st.session_state["logged_in"]:
 
 choice = st.sidebar.radio("Navigation", nav_options)
 
-st.title("``👞`` FAYAS FOOTWEAR")
+st.title("`👞` FAYAS FOOTWEAR")
 st.caption("Live Cloud Inventory & Sales Dashboard")
 
 # --- 1. LIVE STOCK PAGE ---
@@ -202,6 +202,12 @@ elif choice == "❄️ Dead Stock Finder":
             stock_df = pd.DataFrame(stock_data)
             sales_df = pd.DataFrame(sales_data) if sales_data else pd.DataFrame()
             
+            # Format Stock Entry Date (created_at)
+            if "created_at" in stock_df.columns:
+                stock_df["stock_added_date"] = pd.to_datetime(stock_df["created_at"]).dt.strftime("%d %b %Y")
+            else:
+                stock_df["stock_added_date"] = "N/A"
+
             days_filter = st.slider("Select Inactive Period (Days without sale):", min_value=7, max_value=120, value=30, step=7)
             
             sold_art_numbers = set()
@@ -233,7 +239,10 @@ elif choice == "❄️ Dead Stock Finder":
                 
                 st.warning(f"⚠️ {len(dead_stock_df)} stock entries have **ZERO sales** in the last {days_filter} days!")
                 
-                display_df = dead_stock_df[["product", "gender", "art_no", "size", "quantity", "price", "locked_amount", "last_sold_date"]].rename(
+                display_df = dead_stock_df[[
+                    "product", "gender", "art_no", "size", "quantity", 
+                    "price", "locked_amount", "stock_added_date", "last_sold_date"
+                ]].rename(
                     columns={
                         "product": "Product",
                         "gender": "Gender",
@@ -242,6 +251,7 @@ elif choice == "❄️ Dead Stock Finder":
                         "quantity": "Quantity",
                         "price": "Price (₹)",
                         "locked_amount": "Locked Amount (₹)",
+                        "stock_added_date": "Stock Added Date 📦",
                         "last_sold_date": "Last Sold Date 📅"
                     }
                 )
