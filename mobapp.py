@@ -42,6 +42,19 @@ if "sale_size" not in st.session_state:
 if "sale_price" not in st.session_state:
     st.session_state["sale_price"] = 0.0
 
+# --- CENTER SCREEN POPUP DIALOGS ---
+@st.dialog("⚠️ Stock Alert")
+def show_error_popup(message):
+    st.error(message)
+    if st.button("OK, Got it"):
+        st.rerun()
+
+@st.dialog("✅ Success")
+def show_success_popup(message):
+    st.success(message)
+    if st.button("OK"):
+        st.rerun()
+
 # --- SIDEBAR ACCESS CONTROL ---
 st.sidebar.title("🔐 Access Control")
 
@@ -120,7 +133,7 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. QUICK SALE ENTRY (WITH STOCK VALIDATION) ---
+# --- 2. QUICK SALE ENTRY (WITH CENTER POPUP DIALOGS) ---
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
@@ -172,10 +185,10 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     
     if st.button("Record Sale & Deduct Stock", type="primary"):
         if not art_no:
-            st.warning("Please enter or select Art No / Brand.")
+            show_error_popup("Please enter or select Art No / Brand.")
         else:
             try:
-                # Check stock availability first
+                # Check stock availability
                 stock_res = supabase.table("stock").select("*").eq("size", size).execute()
                 matched_item = None
                 
@@ -187,9 +200,9 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                             break
                 
                 if not matched_item:
-                    st.error("❌ Cannot record sale: Matching item & size not found in Stock!")
+                    show_error_popup("❌ Cannot record sale!\n\nThis item & size is NOT FOUND in stock inventory.")
                 elif matched_item["quantity"] < qty:
-                    st.error(f"⚠️ Cannot record sale: Insufficient stock! Available stock is only {matched_item['quantity']} pairs.")
+                    show_error_popup(f"⚠️ Insufficient Stock!\n\nAvailable Stock: {matched_item['quantity']} pairs\nRequested Quantity: {qty} pairs")
                 else:
                     # Proceed to insert into Sales Table
                     supabase.table("sales").insert({
@@ -200,9 +213,9 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                     current_qty = matched_item["quantity"]
                     new_qty = current_qty - qty
                     supabase.table("stock").update({"quantity": new_qty}).eq("id", matched_item["id"]).execute()
-                    st.success(f"✅ Sale Recorded! Stock updated from {current_qty} to {new_qty}.")
+                    show_success_popup(f"✅ Sale Recorded Successfully!\n\nStock updated from {current_qty} to {new_qty} pairs.")
             except Exception as e:
-                st.error(f"Failed to record sale: {e}")
+                show_error_popup(f"Failed to record sale: {e}")
 
 # --- 3. STOCK UPDATE / NEW ENTRY ---
 elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]:
@@ -217,16 +230,16 @@ elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]
     
     if st.button("Add Stock", type="primary"):
         if not product or not art_no:
-            st.warning("Please fill Product Name and Art No.")
+            show_error_popup("Please fill Product Name and Art No.")
         else:
             try:
                 supabase.table("stock").insert({
                     "product": product, "gender": gender, "art_no": art_no,
                     "size": size, "quantity": qty, "price": price
                 }).execute()
-                st.success("✅ New stock item added successfully!")
+                show_success_popup("✅ New stock item added successfully!")
             except Exception as e:
-                st.error(f"Failed to add stock: {e}")
+                show_error_popup(f"Failed to add stock: {e}")
 
 # --- 4. SALES ANALYTICS ---
 elif choice == "📊 Sales Analytics":
