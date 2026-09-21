@@ -152,7 +152,7 @@ if st.session_state["logged_in"]:
 
 choice = st.sidebar.radio("Navigation", nav_options)
 
-st.title("👞 FAYAS FOOTWEAR")
+st.title("`👞` FAYAS FOOTWEAR")
 st.caption("Live Cloud Inventory & Sales Dashboard")
 
 # --- 1. LIVE STOCK PAGE ---
@@ -327,16 +327,94 @@ elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]
             except Exception as e:
                 show_error_popup(f"Failed to add stock: {e}")
 
-# --- 4. SALES ANALYTICS ---
+# --- 4. SALES ANALYTICS & EDIT/RETURN PAGE ---
 elif choice == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & History")
     try:
-        sales_res = supabase.table("sales").select("*").execute()
+        sales_res = supabase.table("sales").select("*").order("created_at", desc=True).execute()
         if sales_res.data:
             sdf = pd.DataFrame(sales_res.data)
             sdf["total"] = sdf["quantity"] * sdf["price"]
             st.metric("Total Sales Generated", f"₹ {sdf['total'].sum():,.2f}")
+            
             st.dataframe(sdf[["created_at", "art_no", "size", "quantity", "price", "total"]], use_container_width=True)
+            
+            # ADMIN ONLY: EDIT / RETURN SALES SECTION
+            if st.session_state["logged_in"]:
+                st.divider()
+                st.subheader("🔄 Edit Sale / Customer Return Handle")
+                
+                # Dropdown option for sales entries
+                sale_options = {
+                    f"ID: {row['id']} | Art: {row['art_no']} | Size: {row['size']} | Qty: {row['quantity']} | Price: ₹{row['price']} | Date: {str(row['created_at'])[:16]}": row
+                    for _, row in sdf.iterrows()
+                }
+                
+                selected_sale_label = st.selectbox("Select Sale Entry to Edit / Return:", list(sale_options.keys()))
+                selected_sale = sale_options[selected_sale_label]
+                
+                with st.form("edit_sale_form"):
+                    st.markdown(f"**Editing Sale Record (ID: {selected_sale['id']})**")
+                    edit_art = st.text_input("Art No / Brand", value=str(selected_sale["art_no"]))
+                    edit_size = st.text_input("Size", value=str(selected_sale["size"]))
+                    edit_qty = st.number_input("Quantity Sold", min_value=0, value=int(selected_sale["quantity"]), step=1)
+                    edit_price = st.number_input("Price per Unit (₹)", min_value=0.0, value=float(selected_sale["price"]), step=10.0)
+                    
+                    form_col1, form_col2 = st.columns(2)
+                    update_btn = form_col1.form_submit_button("✏️ Save Changes / Update Sale", type="primary")
+                    return_delete_btn = form_col2.form_submit_button("❌ Full Return / Delete Sale", type="secondary")
+                    
+                    if update_btn:
+                        old_qty = int(selected_sale["quantity"])
+                        qty_diff = old_qty - edit_qty # Positive if returned/reduced, negative if increased
+                        
+                        # Update Sales Record
+                        supabase.table("sales").update({
+                            "art_no": edit_art,
+                            "size": edit_size,
+                            "quantity": edit_qty,
+                            "price": edit_price
+                        }).eq("id", selected_sale["id"]).execute()
+                        
+                        # Auto Adjust Stock Inventory
+                        if qty_diff != 0:
+                            stock_item = supabase.table("stock").select("*").eq("size", edit_size).execute()
+                            if stock_item.data:
+                                matched = None
+                                for s in stock_item.data:
+                                    if edit_art.lower() in str(s.get("art_no", "")).lower() or edit_art.lower() in str(s.get("product", "")).lower():
+                                        matched = s
+                                        break
+                                if matched:
+                                    new_stock_qty = matched["quantity"] + qty_diff
+                                    supabase.table("stock").update({"quantity": new_stock_qty}).eq("id", matched["id"]).execute()
+                        
+                        st.success("✅ Sale updated and Stock automatically adjusted!")
+                        st.rerun()
+                        
+                    if return_delete_btn:
+                        return_qty = int(selected_sale["quantity"])
+                        sale_size = str(selected_sale["size"])
+                        sale_art = str(selected_sale["art_no"])
+                        
+                        # Delete Sale Record
+                        supabase.table("sales").delete().eq("id", selected_sale["id"]).execute()
+                        
+                        # Restore full stock quantity
+                        stock_item = supabase.table("stock").select("*").eq("size", sale_size).execute()
+                        if stock_item.data:
+                            matched = None
+                            for s in stock_item.data:
+                                if sale_art.lower() in str(s.get("art_no", "")).lower() or sale_art.lower() in str(s.get("product", "")).lower():
+                                    matched = s
+                                    break
+                            if matched:
+                                restored_qty = matched["quantity"] + return_qty
+                                supabase.table("stock").update({"quantity": restored_qty}).eq("id", matched["id"]).execute()
+                        
+                        st.success(f"🗑️ Sale record deleted and {return_qty} pair(s) restored back to stock!")
+                        st.rerun()
+
         else:
             st.info("No sales recorded yet.")
     except Exception as e:
