@@ -197,7 +197,7 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. QUICK SALE ENTRY (COLORFUL BILL WEB QR) ---
+# --- 2. QUICK SALE ENTRY ---
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
@@ -240,7 +240,13 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     qty = st.number_input("Quantity Sold", min_value=1, value=1, step=1, key="sale_qty")
     price = st.number_input("Price per Unit (₹)", min_value=0.0, step=10.0, key="sale_price")
     
-    if st.button("Record Sale & Generate Bill QR", type="primary"):
+    st.divider()
+    btn_col1, btn_col2 = st.columns(2)
+    
+    record_only = btn_col1.button("⚡ Record Sale Only", type="secondary", use_container_width=True)
+    record_and_bill = btn_col2.button("🧾 Record Sale & Generate Bill QR", type="primary", use_container_width=True)
+
+    if record_only or record_and_bill:
         if not art_no:
             show_error_popup("Please enter or select Art No / Brand.")
         else:
@@ -260,43 +266,40 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                 elif matched_item["quantity"] < qty:
                     show_error_popup(f"⚠️ Insufficient Stock!\n\nAvailable Stock: {matched_item['quantity']} pairs\nRequested Quantity: {qty} pairs")
                 else:
-                    # Record Sale
+                    # Record Sale in Database
                     supabase.table("sales").insert({
                         "art_no": art_no, "size": size, "quantity": qty, "price": price
                     }).execute()
                     
-                    # Deduct Stock
+                    # Deduct Stock Quantity
                     current_qty = matched_item["quantity"]
                     new_qty = current_qty - qty
                     supabase.table("stock").update({"quantity": new_qty}).eq("id", matched_item["id"]).execute()
                     
                     st.success(f"✅ Sale Recorded! Stock updated from {current_qty} to {new_qty} pairs.")
                     
-                    # Generate Fancy Image
-                    bill_no = f"FFW-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                    total_amount = qty * price
-                    bill_bytes = generate_fancy_bill_image(art_no, size, qty, price, total_amount, bill_no)
-                    
-                    # Upload to Supabase Storage
-                    file_path = f"{bill_no}.png"
-                    supabase.storage.from_("bills").upload(file_path, bill_bytes, {"content-type": "image/png"})
-                    
-                    # Public Image URL
-                    public_url = supabase.storage.from_("bills").get_public_url(file_path)
-                    
-                    # Generate Link QR Code
-                    qr_bytes = generate_link_qr(public_url)
-                    
-                    st.divider()
-                    col1, col2 = st.columns([1, 1])
-                    
-                    with col1:
-                        st.markdown("### 📲 Customer QR Code")
-                        st.image(qr_bytes, caption="Scan to open full colorful bill on phone", width=250)
+                    # If user clicked Bill QR button, generate image & upload
+                    if record_and_bill:
+                        bill_no = f"FFW-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        total_amount = qty * price
+                        bill_bytes = generate_fancy_bill_image(art_no, size, qty, price, total_amount, bill_no)
                         
-                    with col2:
-                        st.markdown("### 🧾 Bill Image Preview")
-                        st.image(bill_bytes, caption="Official Fayas Footwear Digital Receipt", width=300)
+                        file_path = f"{bill_no}.png"
+                        supabase.storage.from_("bills").upload(file_path, bill_bytes, {"content-type": "image/png"})
+                        
+                        public_url = supabase.storage.from_("bills").get_public_url(file_path)
+                        qr_bytes = generate_link_qr(public_url)
+                        
+                        st.divider()
+                        col1, col2 = st.columns([1, 1])
+                        
+                        with col1:
+                            st.markdown("### 📲 Customer QR Code")
+                            st.image(qr_bytes, caption="Scan to open full colorful bill on phone", width=250)
+                            
+                        with col2:
+                            st.markdown("### 🧾 Bill Image Preview")
+                            st.image(bill_bytes, caption="Official Fayas Footwear Digital Receipt", width=300)
 
             except Exception as e:
                 show_error_popup(f"Failed to record sale: {e}")
