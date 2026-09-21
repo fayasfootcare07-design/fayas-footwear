@@ -95,7 +95,6 @@ if choice == "📦 Live Stock":
         if data:
             df = pd.DataFrame(data)
             
-            # --- KPI METRICS TOP SUMMARY ---
             col1, col2, col3 = st.columns(3)
             total_pairs = df["quantity"].sum()
             df["total_val"] = df["quantity"] * df["price"]
@@ -108,7 +107,6 @@ if choice == "📦 Live Stock":
             
             st.divider()
             
-            # --- SEARCH & FILTER BAR ---
             col_s1, col_s2 = st.columns(2)
             search_art = col_s1.text_input("🔍 Search Art No / Product")
             gender_filter = col_s2.selectbox("Filter Gender", ["All", "Gents", "Ladies", "Kids"])
@@ -122,7 +120,6 @@ if choice == "📦 Live Stock":
             if gender_filter != "All":
                 filtered_df = filtered_df[filtered_df["gender"] == gender_filter]
                 
-            # --- DISPLAY TABLE ---
             st.dataframe(
                 filtered_df[["product", "gender", "art_no", "size", "quantity", "price"]],
                 use_container_width=True,
@@ -133,47 +130,43 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. QUICK SALE ENTRY (WITH CENTER POPUP DIALOGS) ---
+# --- 2. QUICK SALE ENTRY (STRICTLY FROM DATABASE ONLY) ---
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
+    # Supabase Database-il irundhu live stock items matum fetch seiyapadugiradhu
     try:
         stock_data = supabase.table("stock").select("*").execute().data
         stock_df = pd.DataFrame(stock_data) if stock_data else pd.DataFrame()
-    except:
+    except Exception as e:
         stock_df = pd.DataFrame()
 
-    search_brand = st.text_input("🔍 Type Company / Brand Name (e.g., mark, paragon, vkc)")
-    
-    if not stock_df.empty and search_brand.strip():
-        matched_df = stock_df[
-            stock_df["product"].str.contains(search_brand, case=False, na=False) |
-            stock_df["art_no"].str.contains(search_brand, case=False, na=False)
+    if not stock_df.empty:
+        # Ungal Database-il irukum stock items mattum list aagum
+        db_stock_options = [
+            f"{row['product']} | Art:{row['art_no']} | Size:{row['size']} | MRP: ₹{row['price']} | Stock:{row['quantity']} pairs" 
+            for _, row in stock_df.iterrows()
         ]
         
-        if not matched_df.empty:
-            options = ["-- Select Stock Item --"] + [
-                f"{row['product']} | Art:{row['art_no']} | Size:{row['size']} | MRP: ₹{row['price']} | Stock:{row['quantity']} pairs" 
-                for _, row in matched_df.iterrows()
-            ]
-            
-            def update_sale_fields():
-                selected = st.session_state["stock_selector"]
-                if selected != "-- Select Stock Item --":
-                    idx = options.index(selected) - 1
-                    row = matched_df.iloc[idx]
-                    st.session_state["sale_art"] = str(row["art_no"])
-                    st.session_state["sale_size"] = str(row["size"])
-                    st.session_state["sale_price"] = float(row["price"])
+        def on_stock_select():
+            selected = st.session_state["search_stock_item"]
+            if selected:
+                idx = db_stock_options.index(selected)
+                row = stock_df.iloc[idx]
+                st.session_state["sale_art"] = str(row["art_no"])
+                st.session_state["sale_size"] = str(row["size"])
+                st.session_state["sale_price"] = float(row["price"])
 
-            st.selectbox(
-                f"🎯 Available Stock Suggestions for '{search_brand}' (Select to Auto-fill):",
-                options,
-                key="stock_selector",
-                on_change=update_sale_fields
-            )
-        else:
-            st.warning(f"No stock found matching '{search_brand}'")
+        st.selectbox(
+            "🔍 Search Database Stock (Type 'para' to view matching items from your inventory):",
+            options=db_stock_options,
+            index=None,
+            placeholder="Type brand name or art no here...",
+            key="search_stock_item",
+            on_change=on_stock_select
+        )
+    else:
+        st.info("No stock available in database inventory.")
 
     st.divider()
 
@@ -188,7 +181,6 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
             show_error_popup("Please enter or select Art No / Brand.")
         else:
             try:
-                # Check stock availability
                 stock_res = supabase.table("stock").select("*").eq("size", size).execute()
                 matched_item = None
                 
@@ -204,12 +196,10 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                 elif matched_item["quantity"] < qty:
                     show_error_popup(f"⚠️ Insufficient Stock!\n\nAvailable Stock: {matched_item['quantity']} pairs\nRequested Quantity: {qty} pairs")
                 else:
-                    # Proceed to insert into Sales Table
                     supabase.table("sales").insert({
                         "art_no": art_no, "size": size, "quantity": qty, "price": price
                     }).execute()
                     
-                    # Deduct quantity from Stock Table
                     current_qty = matched_item["quantity"]
                     new_qty = current_qty - qty
                     supabase.table("stock").update({"quantity": new_qty}).eq("id", matched_item["id"]).execute()
