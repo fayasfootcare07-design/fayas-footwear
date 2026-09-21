@@ -120,7 +120,7 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. QUICK SALE ENTRY (WITH WORKING AUTO-FILL) ---
+# --- 2. QUICK SALE ENTRY (WITH STOCK VALIDATION) ---
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
@@ -164,7 +164,7 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
 
     st.divider()
 
-    # Form Fields with Session State Connection
+    # Form Fields
     art_no = st.text_input("Art No / Brand", key="sale_art")
     size = st.text_input("Size", key="sale_size")
     qty = st.number_input("Quantity Sold", min_value=1, value=1, step=1, key="sale_qty")
@@ -175,12 +175,7 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
             st.warning("Please enter or select Art No / Brand.")
         else:
             try:
-                # Insert into Sales Table
-                supabase.table("sales").insert({
-                    "art_no": art_no, "size": size, "quantity": qty, "price": price
-                }).execute()
-                
-                # Check matching item in Stock and Deduct Quantity
+                # Check stock availability first
                 stock_res = supabase.table("stock").select("*").eq("size", size).execute()
                 matched_item = None
                 
@@ -191,13 +186,21 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                             matched_item = item
                             break
                 
-                if matched_item:
+                if not matched_item:
+                    st.error("❌ Cannot record sale: Matching item & size not found in Stock!")
+                elif matched_item["quantity"] < qty:
+                    st.error(f"⚠️ Cannot record sale: Insufficient stock! Available stock is only {matched_item['quantity']} pairs.")
+                else:
+                    # Proceed to insert into Sales Table
+                    supabase.table("sales").insert({
+                        "art_no": art_no, "size": size, "quantity": qty, "price": price
+                    }).execute()
+                    
+                    # Deduct quantity from Stock Table
                     current_qty = matched_item["quantity"]
-                    new_qty = max(0, current_qty - qty)
+                    new_qty = current_qty - qty
                     supabase.table("stock").update({"quantity": new_qty}).eq("id", matched_item["id"]).execute()
                     st.success(f"✅ Sale Recorded! Stock updated from {current_qty} to {new_qty}.")
-                else:
-                    st.warning("⚠️ Sale recorded, but matching item/size not found in Stock to deduct.")
             except Exception as e:
                 st.error(f"Failed to record sale: {e}")
 
