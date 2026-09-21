@@ -4,7 +4,7 @@ import pandas as pd
 import qrcode
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
-from datetime import datetime
+from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # Page Config
@@ -59,32 +59,25 @@ def generate_fancy_bill_image(art_no, size, qty, price, total_amount, bill_no):
     except:
         title_font = bold_font = text_font = subtitle_font = small_font = ImageFont.load_default()
 
-    # Outer Card Border
     draw.rectangle([(10, 10), (width - 10, height - 10)], outline="#E0E0E0", width=2)
-    
-    # Top Red Header
     draw.rectangle([(10, 10), (width - 10, 110)], fill="#C82333")
     draw.text((width // 2, 42), "FAYAS FOOTWEAR", fill="white", font=title_font, anchor="mm")
     draw.text((width // 2, 75), "PREMIUM FOOTWEAR COLLECTION • SINCE 2016", fill="#FFC107", font=subtitle_font, anchor="mm")
 
-    # Invoice & Date Info
     current_time = datetime.now().strftime("%d %b %Y, %I:%M %p")
     draw.text((30, 130), f"Invoice No : {bill_no}", fill="#333333", font=bold_font)
     draw.text((30, 155), f"Date         : {current_time}", fill="#666666", font=text_font)
     draw.text((30, 180), "Payment   : CASH (PAID)", fill="#28A745", font=bold_font)
 
-    # Dotted Line
     for x in range(30, width - 30, 10):
         draw.line([(x, 210), (x + 5, 210)], fill="#CCCCCC", width=2)
 
-    # Product Table Header
     draw.rectangle([(30, 225), (width - 30, 260)], fill="#F1F3F5")
     draw.text((40, 242), "ITEM / BRAND", fill="#333333", font=bold_font, anchor="lm")
     draw.text((240, 242), "SIZE", fill="#333333", font=bold_font, anchor="lm")
     draw.text((310, 242), "QTY", fill="#333333", font=bold_font, anchor="lm")
     draw.text((380, 242), "PRICE", fill="#333333", font=bold_font, anchor="lm")
 
-    # Product Details
     draw.text((40, 285), str(art_no)[:18], fill="#222222", font=text_font, anchor="lm")
     draw.text((240, 285), str(size), fill="#222222", font=text_font, anchor="lm")
     draw.text((310, 285), str(qty), fill="#222222", font=text_font, anchor="lm")
@@ -93,12 +86,10 @@ def generate_fancy_bill_image(art_no, size, qty, price, total_amount, bill_no):
     for x in range(30, width - 30, 10):
         draw.line([(x, 320), (x + 5, 320)], fill="#CCCCCC", width=2)
 
-    # Grand Total Highlight
     draw.rectangle([(30, 340), (width - 30, 400)], fill="#FFF5F5", outline="#C82333", width=2)
     draw.text((50, 370), "TOTAL AMOUNT PAID", fill="#333333", font=bold_font, anchor="lm")
     draw.text((width - 50, 370), f"₹{total_amount:,.2f}", fill="#C82333", font=title_font, anchor="rm")
 
-    # Bottom Footer Section
     for x in range(30, width - 30, 10):
         draw.line([(x, 430), (x + 5, 430)], fill="#CCCCCC", width=2)
 
@@ -110,7 +101,6 @@ def generate_fancy_bill_image(art_no, size, qty, price, total_amount, bill_no):
     image.save(buf, format="PNG")
     return buf.getvalue()
 
-# --- FUNCTION TO GENERATE LINK QR CODE ---
 def generate_link_qr(url_link):
     qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=8, border=2)
     qr.add_data(url_link)
@@ -121,7 +111,6 @@ def generate_link_qr(url_link):
     img.save(buf, format="PNG")
     return buf.getvalue()
 
-# --- POPUP DIALOGS ---
 @st.dialog("⚠️ Stock Alert")
 def show_error_popup(message):
     st.error(message)
@@ -146,7 +135,7 @@ else:
         st.session_state["logged_in"] = False
         st.rerun()
 
-nav_options = ["📦 Live Stock", "📊 Sales Analytics"]
+nav_options = ["📦 Live Stock", "❄️ Dead Stock Finder", "📊 Sales Analytics"]
 if st.session_state["logged_in"]:
     nav_options.extend(["➕ Quick Sale Entry", "📝 Stock Update / New Entry"])
 
@@ -197,7 +186,63 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. QUICK SALE ENTRY ---
+# --- 2. DEAD STOCK FINDER PAGE ---
+elif choice == "❄️ Dead Stock Finder":
+    st.subheader("❄️ Dead Stock & Capital Lock Finder")
+    st.caption("Find products that haven't been sold for days & holding your business capital.")
+    
+    try:
+        stock_res = supabase.table("stock").select("*").execute()
+        sales_res = supabase.table("sales").select("*").execute()
+        
+        stock_data = stock_res.data
+        sales_data = sales_res.data
+        
+        if stock_data:
+            stock_df = pd.DataFrame(stock_data)
+            sales_df = pd.DataFrame(sales_data) if sales_data else pd.DataFrame()
+            
+            days_filter = st.slider("Select Inactive Period (Days without sale):", min_value=7, max_value=120, value=30, step=7)
+            
+            sold_art_numbers = set()
+            if not sales_df.empty:
+                sales_df["created_at"] = pd.to_datetime(sales_df["created_at"])
+                cutoff_date = datetime.now() - timedelta(days=days_filter)
+                
+                # Filter sales in selected days
+                recent_sales = sales_df[sales_df["created_at"] >= cutoff_date]
+                sold_art_numbers = set(recent_sales["art_no"].str.lower().unique())
+            
+            # Find stock items with no sales in these days
+            stock_df["art_no_clean"] = stock_df["art_no"].str.lower()
+            dead_stock_df = stock_df[~stock_df["art_no_clean"].isin(sold_art_numbers) & (stock_df["quantity"] > 0)].copy()
+            
+            if not dead_stock_df.empty:
+                dead_stock_df["locked_amount"] = dead_stock_df["quantity"] * dead_stock_df["price"]
+                total_locked_capital = dead_stock_df["locked_amount"].sum()
+                total_dead_pairs = dead_stock_df["quantity"].sum()
+                
+                m1, m2 = st.columns(2)
+                m1.metric("🔴 Dead Stock Pairs", f"{total_dead_pairs} Pairs")
+                m2.metric("💰 Locked Capital Amount", f"₹ {total_locked_capital:,.2f}")
+                
+                st.warning(f"⚠️ {len(dead_stock_df)} stock entries have **ZERO sales** in the last {days_filter} days!")
+                
+                st.dataframe(
+                    dead_stock_df[["product", "gender", "art_no", "size", "quantity", "price", "locked_amount"]],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.info("💡 **Business Advice:** Put discount banners or 'Clearance Sale' offers on these Art Nos to recover locked capital quickly!")
+            else:
+                st.success(f"🎉 Great job! No dead stock found for the last {days_filter} days. All items are moving well!")
+        else:
+            st.info("No stock data available.")
+    except Exception as e:
+        st.error(f"Error analyzing dead stock: {e}")
+
+# --- 3. QUICK SALE ENTRY ---
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
@@ -266,19 +311,16 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                 elif matched_item["quantity"] < qty:
                     show_error_popup(f"⚠️ Insufficient Stock!\n\nAvailable Stock: {matched_item['quantity']} pairs\nRequested Quantity: {qty} pairs")
                 else:
-                    # Record Sale in Database
                     supabase.table("sales").insert({
                         "art_no": art_no, "size": size, "quantity": qty, "price": price
                     }).execute()
                     
-                    # Deduct Stock Quantity
                     current_qty = matched_item["quantity"]
                     new_qty = current_qty - qty
                     supabase.table("stock").update({"quantity": new_qty}).eq("id", matched_item["id"]).execute()
                     
                     st.success(f"✅ Sale Recorded! Stock updated from {current_qty} to {new_qty} pairs.")
                     
-                    # If user clicked Bill QR button, generate image & upload
                     if record_and_bill:
                         bill_no = f"FFW-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                         total_amount = qty * price
@@ -304,7 +346,7 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
             except Exception as e:
                 show_error_popup(f"Failed to record sale: {e}")
 
-# --- 3. STOCK UPDATE / NEW ENTRY ---
+# --- 4. STOCK UPDATE / NEW ENTRY ---
 elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]:
     st.subheader("📝 Add / Update Inventory")
     product = st.text_input("Product Name / Brand (e.g., VKC, Paragon)", key="stock_product")
@@ -327,7 +369,7 @@ elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]
             except Exception as e:
                 show_error_popup(f"Failed to add stock: {e}")
 
-# --- 4. SALES ANALYTICS & EDIT/RETURN PAGE ---
+# --- 5. SALES ANALYTICS & EDIT/RETURN PAGE ---
 elif choice == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & History")
     try:
@@ -339,12 +381,10 @@ elif choice == "📊 Sales Analytics":
             
             st.dataframe(sdf[["created_at", "art_no", "size", "quantity", "price", "total"]], use_container_width=True)
             
-            # ADMIN ONLY: EDIT / RETURN SALES SECTION
             if st.session_state["logged_in"]:
                 st.divider()
                 st.subheader("🔄 Edit Sale / Customer Return Handle")
                 
-                # Dropdown option for sales entries
                 sale_options = {
                     f"ID: {row['id']} | Art: {row['art_no']} | Size: {row['size']} | Qty: {row['quantity']} | Price: ₹{row['price']} | Date: {str(row['created_at'])[:16]}": row
                     for _, row in sdf.iterrows()
@@ -366,9 +406,8 @@ elif choice == "📊 Sales Analytics":
                     
                     if update_btn:
                         old_qty = int(selected_sale["quantity"])
-                        qty_diff = old_qty - edit_qty # Positive if returned/reduced, negative if increased
+                        qty_diff = old_qty - edit_qty
                         
-                        # Update Sales Record
                         supabase.table("sales").update({
                             "art_no": edit_art,
                             "size": edit_size,
@@ -376,7 +415,6 @@ elif choice == "📊 Sales Analytics":
                             "price": edit_price
                         }).eq("id", selected_sale["id"]).execute()
                         
-                        # Auto Adjust Stock Inventory
                         if qty_diff != 0:
                             stock_item = supabase.table("stock").select("*").eq("size", edit_size).execute()
                             if stock_item.data:
@@ -397,10 +435,8 @@ elif choice == "📊 Sales Analytics":
                         sale_size = str(selected_sale["size"])
                         sale_art = str(selected_sale["art_no"])
                         
-                        # Delete Sale Record
                         supabase.table("sales").delete().eq("id", selected_sale["id"]).execute()
                         
-                        # Restore full stock quantity
                         stock_item = supabase.table("stock").select("*").eq("size", sale_size).execute()
                         if stock_item.data:
                             matched = None
