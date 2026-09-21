@@ -407,15 +407,54 @@ elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]
 
 # --- 5. SALES ANALYTICS & EDIT/RETURN PAGE ---
 elif choice == "📊 Sales Analytics":
-    st.subheader("📊 Sales Analytics & History")
+    st.subheader("📊 Sales Analytics & Best Sellers")
     try:
         sales_res = supabase.table("sales").select("*").order("created_at", desc=True).execute()
         if sales_res.data:
             sdf = pd.DataFrame(sales_res.data)
             sdf["total"] = sdf["quantity"] * sdf["price"]
-            st.metric("Total Sales Generated", f"₹ {sdf['total'].sum():,.2f}")
             
-            st.dataframe(sdf[["created_at", "art_no", "size", "quantity", "price", "total"]], use_container_width=True)
+            total_rev = sdf['total'].sum()
+            total_pairs_sold = sdf['quantity'].sum()
+            
+            m1, m2 = st.columns(2)
+            m1.metric("💰 Total Sales Revenue", f"₹ {total_rev:,.2f}")
+            m2.metric("📦 Total Pairs Sold", f"{total_pairs_sold} Pairs")
+            
+            st.divider()
+            
+            # --- TOP SELLING PRODUCTS (BIG TO SMALL) ---
+            st.subheader("🏆 Top Selling Products (Big to Small)")
+            st.caption("Products sorted by total quantity sold (highest demand first).")
+            
+            top_selling_df = sdf.groupby("art_no").agg(
+                total_pairs_sold=("quantity", "sum"),
+                total_revenue=("total", "sum")
+            ).reset_index()
+            
+            # Sort Big to Small (Descending Order)
+            top_selling_df = top_selling_df.sort_values(by="total_pairs_sold", ascending=False)
+            
+            top_selling_df = top_selling_df.rename(columns={
+                "art_no": "Art No / Brand",
+                "total_pairs_sold": "Total Pairs Sold 📦",
+                "total_revenue": "Total Revenue (₹) 💰"
+            })
+            
+            st.dataframe(
+                top_selling_df,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Chart Visualization
+            st.subheader("📈 Top Demand Chart")
+            chart_data = top_selling_df.set_index("Art No / Brand")["Total Pairs Sold 📦"]
+            st.bar_chart(chart_data)
+            
+            st.divider()
+            st.subheader("📜 Detailed Sales Log History")
+            st.dataframe(sdf[["created_at", "art_no", "size", "quantity", "price", "total"]], use_container_width=True, hide_index=True)
             
             if st.session_state["logged_in"]:
                 st.divider()
