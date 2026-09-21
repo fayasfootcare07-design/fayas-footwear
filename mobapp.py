@@ -470,8 +470,43 @@ elif choice == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & History")
     try:
         sales_res = supabase.table("sales").select("*").order("created_at", desc=True).execute()
+        stock_res = supabase.table("stock").select("*").execute()
+
         if sales_res.data:
             sdf = pd.DataFrame(sales_res.data)
+            stdf = pd.DataFrame(stock_res.data) if stock_res.data else pd.DataFrame()
+            
+            # Extract Stock details for Product Mapping
+            art_to_product = {}
+            if not stdf.empty:
+                for _, row in stdf.iterrows():
+                    art_to_product[str(row["art_no"]).lower().strip()] = str(row["product"]).strip()
+
+            def extract_product_and_art(art_val):
+                art_str = str(art_val).strip()
+                # Check if product is stored inside art_no (e.g., "paragon 3229")
+                parts = art_str.split(" ", 1)
+                if len(parts) > 1 and not parts[0].isdigit():
+                    return parts[0].title(), parts[1]
+                
+                # Check from stock table lookup
+                found_prod = art_to_product.get(art_str.lower(), "")
+                if found_prod:
+                    return found_prod.title(), art_str
+                
+                # If art_str itself is purely alphabetical, treat as product name
+                if not art_str.isdigit():
+                    return art_str.title(), "-"
+                
+                return "Footwear", art_str
+
+            sdf[["product", "clean_art_no"]] = sdf["art_no"].apply(lambda x: pd.Series(extract_product_and_art(x)))
+            
+            # Format Date & Time cleanly
+            sdf["formatted_time"] = pd.to_datetime(sdf["created_at"]).dt.strftime("%d %b %Y, %I:%M %p")
+            
+            # Generate Serial Number (S.No)
+            sdf["sno"] = range(1, len(sdf) + 1)
             sdf["total"] = sdf["quantity"] * sdf["price"]
             
             total_rev = sdf['total'].sum()
@@ -483,14 +518,32 @@ elif choice == "📊 Sales Analytics":
             
             st.divider()
             st.subheader("📜 Detailed Sales Log History")
-            st.dataframe(sdf[["created_at", "art_no", "size", "quantity", "price", "total"]], use_container_width=True, hide_index=True)
+            
+            # Select and rename required exact columns
+            display_sales_df = sdf[[
+                "sno", "product", "clean_art_no", "size", "quantity", "price", "formatted_time"
+            ]].rename(columns={
+                "sno": "sno",
+                "product": "product",
+                "clean_art_no": "art no",
+                "size": "size",
+                "quantity": "quantity",
+                "price": "price",
+                "formatted_time": "sales data&time"
+            })
+            
+            st.dataframe(
+                display_sales_df,
+                use_container_width=True,
+                hide_index=True
+            )
             
             if st.session_state["logged_in"]:
                 st.divider()
                 st.subheader("🔄 Edit Sale / Customer Return Handle")
                 
                 sale_options = {
-                    f"ID: {row['id']} | Art: {row['art_no']} | Size: {row['size']} | Qty: {row['quantity']} | Price: ₹{row['price']} | Date: {str(row['created_at'])[:16]}": row
+                    f"ID: {row['id']} | Product: {row['product']} | Art: {row['clean_art_no']} | Size: {row['size']} | Qty: {row['quantity']} | Price: ₹{row['price']}": row
                     for _, row in sdf.iterrows()
                 }
                 
