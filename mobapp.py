@@ -3,7 +3,8 @@ import streamlit.components.v1 as components
 import pandas as pd
 import qrcode
 from io import BytesIO
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+from datetime import datetime
 from supabase import create_client, Client
 
 # Page Config
@@ -33,11 +34,9 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Session State for Authentication
+# Session State
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
-
-# Session State Keys for Auto-fill Sale Entry
 if "sale_art" not in st.session_state:
     st.session_state["sale_art"] = ""
 if "sale_size" not in st.session_state:
@@ -45,22 +44,91 @@ if "sale_size" not in st.session_state:
 if "sale_price" not in st.session_state:
     st.session_state["sale_price"] = 0.0
 
-# --- HELPER FUNCTION TO GENERATE QR CODE ---
-def generate_bill_qr(receipt_text):
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=8,
-        border=3,
-    )
-    qr.add_data(receipt_text)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="#B80000", back_color="white") # Brand Red Color
+# --- FANCY BILL RECEIPT WITH INTEGRATED QR CODE ---
+def generate_fancy_bill_image(art_no, size, qty, price, total_amount):
+    width, height = 500, 720
+    # Soft off-white background for receipt feel
+    image = Image.new("RGB", (width, height), color="#FAFAFA")
+    draw = ImageDraw.Draw(image)
     
+    # Fonts setup
+    try:
+        title_font = ImageFont.truetype("arialbd.ttf", 24)
+        subtitle_font = ImageFont.truetype("arial.ttf", 13)
+        bold_font = ImageFont.truetype("arialbd.ttf", 15)
+        text_font = ImageFont.truetype("arial.ttf", 14)
+        small_font = ImageFont.truetype("arial.ttf", 12)
+    except:
+        title_font = bold_font = text_font = subtitle_font = small_font = ImageFont.load_default()
+
+    # 1. Outer Card Border
+    draw.rectangle([(10, 10), (width - 10, height - 10)], outline="#E0E0E0", width=2)
+    
+    # 2. Top Header - Fayas Red Accent
+    draw.rectangle([(10, 10), (width - 10, 110)], fill="#C82333")
+    draw.text((width // 2, 42), "FAYAS FOOTWEAR", fill="white", font=title_font, anchor="mm")
+    draw.text((width // 2, 75), "PREMIUM FOOTWEAR COLLECTION • SINCE 2016", fill="#FFC107", font=subtitle_font, anchor="mm")
+
+    # 3. Invoice & Date Info Box
+    bill_no = f"FFW-{datetime.now().strftime('%Y%m%d%H%M')}"
+    current_time = datetime.now().strftime("%d %b %Y, %I:%M %p")
+    
+    draw.text((30, 130), f"Invoice No : {bill_no}", fill="#333333", font=bold_font)
+    draw.text((30, 155), f"Date         : {current_time}", fill="#666666", font=text_font)
+    draw.text((30, 180), "Payment   : CASH (PAID)", fill="#28A745", font=bold_font)
+
+    # Dotted Divider Line
+    for x in range(30, width - 30, 10):
+        draw.line([(x, 210), (x + 5, 210)], fill="#CCCCCC", width=2)
+
+    # 4. Product Table Header Bar
+    draw.rectangle([(30, 225), (width - 30, 260)], fill="#F1F3F5")
+    draw.text((40, 242), "ITEM / BRAND", fill="#333333", font=bold_font, anchor="lm")
+    draw.text((240, 242), "SIZE", fill="#333333", font=bold_font, anchor="lm")
+    draw.text((310, 242), "QTY", fill="#333333", font=bold_font, anchor="lm")
+    draw.text((380, 242), "PRICE", fill="#333333", font=bold_font, anchor="lm")
+
+    # Product Item Row
+    draw.text((40, 285), str(art_no)[:18], fill="#222222", font=text_font, anchor="lm")
+    draw.text((240, 285), str(size), fill="#222222", font=text_font, anchor="lm")
+    draw.text((310, 285), str(qty), fill="#222222", font=text_font, anchor="lm")
+    draw.text((380, 285), f"₹{price:,.2f}", fill="#222222", font=text_font, anchor="lm")
+
+    # Dotted Divider Line
+    for x in range(30, width - 30, 10):
+        draw.line([(x, 320), (x + 5, 320)], fill="#CCCCCC", width=2)
+
+    # 5. Grand Total Highlight Box
+    draw.rectangle([(30, 340), (width - 30, 400)], fill="#FFF5F5", outline="#C82333", width=2)
+    draw.text((50, 370), "TOTAL AMOUNT PAID", fill="#333333", font=bold_font, anchor="lm")
+    draw.text((width - 50, 370), f"₹{total_amount:,.2f}", fill="#C82333", font=title_font, anchor="rm")
+
+    # 6. Integrated QR Code inside Receipt Image
+    qr_data = f"FAYAS FOOTWEAR\nInvoice: {bill_no}\nItem: {art_no} (Size {size})\nAmount: ₹{total_amount:.2f}\nStatus: Paid"
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=4, border=1)
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="#C82333", back_color="white").convert("RGB")
+    
+    # Paste QR Code on bottom left
+    image.paste(qr_img, (40, 435))
+
+    # Right side Text next to QR Code
+    draw.text((170, 460), "Scan to verify digital receipt", fill="#333333", font=bold_font)
+    draw.text((170, 485), "Thank you for shopping with us!", fill="#666666", font=text_font)
+    draw.text((170, 508), "Quality guaranteed footwear", fill="#888888", font=small_font)
+
+    # Bottom Footer Line
+    for x in range(30, width - 30, 10):
+        draw.line([(x, 560), (x + 5, 560)], fill="#CCCCCC", width=2)
+
+    draw.text((width // 2, 590), "FAYAS FOOTWEAR • MAIN BAZAAR", fill="#555555", font=small_font, anchor="mm")
+    draw.text((width // 2, 615), "Exchange valid within 7 days with this bill receipt", fill="#888888", font=small_font, anchor="mm")
+
+    # Convert Image to Bytes
     buf = BytesIO()
-    img.save(buf, format="PNG")
-    byte_im = buf.getvalue()
-    return byte_im
+    image.save(buf, format="PNG")
+    return buf.getvalue()
 
 # --- CENTER SCREEN POPUP DIALOGS ---
 @st.dialog("⚠️ Stock Alert")
@@ -87,15 +155,13 @@ else:
         st.session_state["logged_in"] = False
         st.rerun()
 
-# Sidebar Navigation Options
 nav_options = ["📦 Live Stock", "📊 Sales Analytics"]
 if st.session_state["logged_in"]:
     nav_options.extend(["➕ Quick Sale Entry", "📝 Stock Update / New Entry"])
 
 choice = st.sidebar.radio("Navigation", nav_options)
 
-# --- HEADER ---
-st.title("👞 FAYAS FOOTWEAR")
+st.title("MB FAYAS FOOTWEAR")
 st.caption("Live Cloud Inventory & Sales Dashboard")
 
 # --- 1. LIVE STOCK PAGE ---
@@ -144,7 +210,7 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. QUICK SALE ENTRY (WITH QR CODE BILL GENERATION) ---
+# --- 2. QUICK SALE ENTRY WITH FANCY BILL ---
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
@@ -188,7 +254,7 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     qty = st.number_input("Quantity Sold", min_value=1, value=1, step=1, key="sale_qty")
     price = st.number_input("Price per Unit (₹)", min_value=0.0, step=10.0, key="sale_price")
     
-    if st.button("Record Sale & Generate QR Bill", type="primary"):
+    if st.button("Record Sale & Generate Fancy Bill", type="primary"):
         if not art_no:
             show_error_popup("Please enter or select Art No / Brand.")
         else:
@@ -220,42 +286,21 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                     
                     st.success(f"✅ Sale Recorded! Stock updated from {current_qty} to {new_qty} pairs.")
                     
-                    # --- GENERATE DIGITAL BILL & QR CODE ---
+                    # --- GENERATE FANCY RECEIPT IMAGE ---
                     total_amount = qty * price
-                    receipt_text = f"""
-=============================
-      FAYAS FOOTWEAR 👞
-   Digital Purchase Receipt
-=============================
-Item/Brand : {art_no}
-Size       : {size}
-Quantity   : {qty} Pair(s)
-Price/Unit : ₹{price:.2f}
------------------------------
-TOTAL BILL : ₹{total_amount:.2f}
-=============================
-  Thank you for shopping! 
-=============================
-"""
-                    qr_image_bytes = generate_bill_qr(receipt_text)
+                    bill_img_bytes = generate_fancy_bill_image(art_no, size, qty, price, total_amount)
                     
                     st.divider()
-                    col_qr1, col_qr2 = st.columns([1, 2])
+                    st.markdown("### 🧾 Fancy Digital Bill Receipt")
+                    st.image(bill_img_bytes, caption="Fayas Footwear Official Digital Receipt", width=420)
                     
-                    with col_qr1:
-                        st.markdown("### 📲 Customer QR Bill")
-                        st.image(qr_image_bytes, caption="Scan using Phone Camera to view Bill", width=220)
-                        
-                        st.download_button(
-                            label="📥 Download QR Code",
-                            data=qr_image_bytes,
-                            file_name=f"Fayas_Footwear_Bill_{art_no}_size{size}.png",
-                            mime="image/png"
-                        )
-                    
-                    with col_qr2:
-                        st.markdown("### 📄 Bill Receipt Text")
-                        st.code(receipt_text, language="text")
+                    st.download_button(
+                        label="📥 Download Fancy Bill Image (PNG)",
+                        data=bill_img_bytes,
+                        file_name=f"Fayas_Footwear_Bill_{art_no}_size{size}.png",
+                        mime="image/png",
+                        type="primary"
+                    )
 
             except Exception as e:
                 show_error_popup(f"Failed to record sale: {e}")
@@ -269,7 +314,7 @@ elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]
     art_no = st.text_input("Art No", key="stock_art")
     size = st.text_input("Size", key="stock_size")
     qty = st.number_input("Quantity", min_value=1, value=10, step=1, key="stock_qty")
-    price = st.number_input("Price (₹)", min_value=0.0, step=10.0, key="stock_price")
+    price = st.number_input("Price (₹)", min_value=0.0, step=10.0, price_key="stock_price") if "price_key" in locals() else st.number_input("Price (₹)", min_value=0.0, step=10.0, key="stock_price")
     
     if st.button("Add Stock", type="primary"):
         if not product or not art_no:
