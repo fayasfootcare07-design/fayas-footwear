@@ -1,6 +1,9 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
+import qrcode
+from io import BytesIO
+from PIL import Image
 from supabase import create_client, Client
 
 # Page Config
@@ -42,17 +45,28 @@ if "sale_size" not in st.session_state:
 if "sale_price" not in st.session_state:
     st.session_state["sale_price"] = 0.0
 
+# --- HELPER FUNCTION TO GENERATE QR CODE ---
+def generate_bill_qr(receipt_text):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=8,
+        border=3,
+    )
+    qr.add_data(receipt_text)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#B80000", back_color="white") # Brand Red Color
+    
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    byte_im = buf.getvalue()
+    return byte_im
+
 # --- CENTER SCREEN POPUP DIALOGS ---
 @st.dialog("⚠️ Stock Alert")
 def show_error_popup(message):
     st.error(message)
     if st.button("OK, Got it"):
-        st.rerun()
-
-@st.dialog("✅ Success")
-def show_success_popup(message):
-    st.success(message)
-    if st.button("OK"):
         st.rerun()
 
 # --- SIDEBAR ACCESS CONTROL ---
@@ -130,11 +144,10 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. QUICK SALE ENTRY (STRICTLY FROM DATABASE ONLY) ---
+# --- 2. QUICK SALE ENTRY (WITH QR CODE BILL GENERATION) ---
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
-    # Supabase Database-il irundhu live stock items matum fetch seiyapadugiradhu
     try:
         stock_data = supabase.table("stock").select("*").execute().data
         stock_df = pd.DataFrame(stock_data) if stock_data else pd.DataFrame()
@@ -142,7 +155,6 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
         stock_df = pd.DataFrame()
 
     if not stock_df.empty:
-        # Ungal Database-il irukum stock items mattum list aagum
         db_stock_options = [
             f"{row['product']} | Art:{row['art_no']} | Size:{row['size']} | MRP: ₹{row['price']} | Stock:{row['quantity']} pairs" 
             for _, row in stock_df.iterrows()
@@ -158,7 +170,7 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                 st.session_state["sale_price"] = float(row["price"])
 
         st.selectbox(
-            "🔍 Search Database Stock (Type 'para' to view matching items from your inventory):",
+            "🔍 Search Database Stock:",
             options=db_stock_options,
             index=None,
             placeholder="Type brand name or art no here...",
@@ -176,7 +188,7 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     qty = st.number_input("Quantity Sold", min_value=1, value=1, step=1, key="sale_qty")
     price = st.number_input("Price per Unit (₹)", min_value=0.0, step=10.0, key="sale_price")
     
-    if st.button("Record Sale & Deduct Stock", type="primary"):
+    if st.button("Record Sale & Generate QR Bill", type="primary"):
         if not art_no:
             show_error_popup("Please enter or select Art No / Brand.")
         else:
@@ -196,14 +208,55 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                 elif matched_item["quantity"] < qty:
                     show_error_popup(f"⚠️ Insufficient Stock!\n\nAvailable Stock: {matched_item['quantity']} pairs\nRequested Quantity: {qty} pairs")
                 else:
+                    # Insert Sale
                     supabase.table("sales").insert({
                         "art_no": art_no, "size": size, "quantity": qty, "price": price
                     }).execute()
                     
+                    # Update Stock
                     current_qty = matched_item["quantity"]
                     new_qty = current_qty - qty
                     supabase.table("stock").update({"quantity": new_qty}).eq("id", matched_item["id"]).execute()
-                    show_success_popup(f"✅ Sale Recorded Successfully!\n\nStock updated from {current_qty} to {new_qty} pairs.")
+                    
+                    st.success(f"✅ Sale Recorded! Stock updated from {current_qty} to {new_qty} pairs.")
+                    
+                    # --- GENERATE DIGITAL BILL & QR CODE ---
+                    total_amount = qty * price
+                    receipt_text = f"""
+=============================
+      FAYAS FOOTWEAR 👞
+   Digital Purchase Receipt
+=============================
+Item/Brand : {art_no}
+Size       : {size}
+Quantity   : {qty} Pair(s)
+Price/Unit : ₹{price:.2f}
+-----------------------------
+TOTAL BILL : ₹{total_amount:.2f}
+=============================
+  Thank you for shopping! 
+=============================
+"""
+                    qr_image_bytes = generate_bill_qr(receipt_text)
+                    
+                    st.divider()
+                    col_qr1, col_qr2 = st.columns([1, 2])
+                    
+                    with col_qr1:
+                        st.markdown("### 📲 Customer QR Bill")
+                        st.image(qr_image_bytes, caption="Scan using Phone Camera to view Bill", width=220)
+                        
+                        st.download_button(
+                            label="📥 Download QR Code",
+                            data=qr_image_bytes,
+                            file_name=f"Fayas_Footwear_Bill_{art_no}_size{size}.png",
+                            mime="image/png"
+                        )
+                    
+                    with col_qr2:
+                        st.markdown("### 📄 Bill Receipt Text")
+                        st.code(receipt_text, language="text")
+
             except Exception as e:
                 show_error_popup(f"Failed to record sale: {e}")
 
@@ -227,7 +280,7 @@ elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]
                     "product": product, "gender": gender, "art_no": art_no,
                     "size": size, "quantity": qty, "price": price
                 }).execute()
-                show_success_popup("✅ New stock item added successfully!")
+                st.success("✅ New stock item added successfully!")
             except Exception as e:
                 show_error_popup(f"Failed to add stock: {e}")
 
