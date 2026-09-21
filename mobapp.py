@@ -151,7 +151,7 @@ if st.session_state["logged_in"]:
 
 choice = st.sidebar.radio("Navigation", nav_options)
 
-st.title("`👞` FAYAS FOOTWEAR")
+st.title("👞 FAYAS FOOTWEAR")
 st.caption("Live Cloud Inventory & Sales Dashboard")
 
 # --- 1. LIVE STOCK PAGE ---
@@ -196,27 +196,45 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. FAST SELLING PRODUCTS PAGE (NEW SEPARATE PAGE) ---
+# --- 2. FAST SELLING PRODUCTS PAGE ---
 elif choice == "🔥 Fast Selling Products":
     st.subheader("🏆 Top Selling Products (Big to Small)")
     st.caption("Products sorted by total quantity sold (highest demand first).")
     
     try:
         sales_res = supabase.table("sales").select("*").execute()
+        stock_res = supabase.table("stock").select("*").execute()
+        
         if sales_res.data:
             sdf = pd.DataFrame(sales_res.data)
+            stdf = pd.DataFrame(stock_res.data) if stock_res.data else pd.DataFrame()
+            
+            # Map product brand name from stock table
+            art_to_product = {}
+            if not stdf.empty:
+                for _, row in stdf.iterrows():
+                    art_to_product[str(row["art_no"]).lower().strip()] = str(row["product"]).strip()
+            
+            def get_combined_name(art):
+                art_str = str(art).strip()
+                prod = art_to_product.get(art_str.lower(), "")
+                if prod and prod.lower() not in art_str.lower():
+                    return f"{prod} {art_str}"
+                return art_str
+
+            sdf["product_full_name"] = sdf["art_no"].apply(get_combined_name)
             sdf["total"] = sdf["quantity"] * sdf["price"]
             
-            top_selling_df = sdf.groupby("art_no").agg(
+            top_selling_df = sdf.groupby("product_full_name").agg(
                 total_pairs_sold=("quantity", "sum"),
                 total_revenue=("total", "sum")
             ).reset_index()
             
-            # Sort Big to Small (Descending Order)
+            # Big to Small Sort
             top_selling_df = top_selling_df.sort_values(by="total_pairs_sold", ascending=False)
             
             top_selling_df = top_selling_df.rename(columns={
-                "art_no": "Art No / Brand",
+                "product_full_name": "Product & Model (Brand - Art No)",
                 "total_pairs_sold": "Total Pairs Sold 📦",
                 "total_revenue": "Total Revenue (₹) 💰"
             })
@@ -229,7 +247,7 @@ elif choice == "🔥 Fast Selling Products":
             
             st.divider()
             st.subheader("📈 Top Demand Visual Chart")
-            chart_data = top_selling_df.set_index("Art No / Brand")["Total Pairs Sold 📦"]
+            chart_data = top_selling_df.set_index("Product & Model (Brand - Art No)")["Total Pairs Sold 📦"]
             st.bar_chart(chart_data)
         else:
             st.info("No sales records available to calculate fast-selling products.")
@@ -340,7 +358,7 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
             if selected:
                 idx = db_stock_options.index(selected)
                 row = stock_df.iloc[idx]
-                st.session_state["sale_art"] = str(row["art_no"])
+                st.session_state["sale_art"] = f"{row['product']} {row['art_no']}"
                 st.session_state["sale_size"] = str(row["size"])
                 st.session_state["sale_price"] = float(row["price"])
 
@@ -379,7 +397,8 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                 if stock_res.data:
                     for item in stock_res.data:
                         if (art_no.lower() in str(item.get("art_no", "")).lower()) or \
-                           (art_no.lower() in str(item.get("product", "")).lower()):
+                           (art_no.lower() in str(item.get("product", "")).lower()) or \
+                           (str(item.get("product", "")).lower() in art_no.lower()):
                             matched_item = item
                             break
                 
