@@ -136,12 +136,13 @@ else:
         st.rerun()
 
 # Public navigation options
-nav_options = ["📦 Live Stock", "📊 Sales Analytics"]
+nav_options = ["📦 Live Stock", "🔥 Fast Selling Products", "📊 Sales Analytics"]
 
 # Admin-only navigation options
 if st.session_state["logged_in"]:
     nav_options = [
         "📦 Live Stock", 
+        "🔥 Fast Selling Products",
         "❄️ Dead Stock Finder", 
         "📊 Sales Analytics", 
         "➕ Quick Sale Entry", 
@@ -195,7 +196,47 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. DEAD STOCK FINDER PAGE (ADMIN ONLY) ---
+# --- 2. FAST SELLING PRODUCTS PAGE (NEW SEPARATE PAGE) ---
+elif choice == "🔥 Fast Selling Products":
+    st.subheader("🏆 Top Selling Products (Big to Small)")
+    st.caption("Products sorted by total quantity sold (highest demand first).")
+    
+    try:
+        sales_res = supabase.table("sales").select("*").execute()
+        if sales_res.data:
+            sdf = pd.DataFrame(sales_res.data)
+            sdf["total"] = sdf["quantity"] * sdf["price"]
+            
+            top_selling_df = sdf.groupby("art_no").agg(
+                total_pairs_sold=("quantity", "sum"),
+                total_revenue=("total", "sum")
+            ).reset_index()
+            
+            # Sort Big to Small (Descending Order)
+            top_selling_df = top_selling_df.sort_values(by="total_pairs_sold", ascending=False)
+            
+            top_selling_df = top_selling_df.rename(columns={
+                "art_no": "Art No / Brand",
+                "total_pairs_sold": "Total Pairs Sold 📦",
+                "total_revenue": "Total Revenue (₹) 💰"
+            })
+            
+            st.dataframe(
+                top_selling_df,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            st.divider()
+            st.subheader("📈 Top Demand Visual Chart")
+            chart_data = top_selling_df.set_index("Art No / Brand")["Total Pairs Sold 📦"]
+            st.bar_chart(chart_data)
+        else:
+            st.info("No sales records available to calculate fast-selling products.")
+    except Exception as e:
+        st.error(f"Error fetching top selling products: {e}")
+
+# --- 3. DEAD STOCK FINDER PAGE (ADMIN ONLY) ---
 elif choice == "❄️ Dead Stock Finder" and st.session_state["logged_in"]:
     st.subheader("❄️ Dead Stock & Capital Lock Finder")
     st.caption("Find products that haven't been sold for days & holding your business capital.")
@@ -278,7 +319,7 @@ elif choice == "❄️ Dead Stock Finder" and st.session_state["logged_in"]:
     except Exception as e:
         st.error(f"Error analyzing dead stock: {e}")
 
-# --- 3. QUICK SALE ENTRY ---
+# --- 4. QUICK SALE ENTRY ---
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
@@ -382,7 +423,7 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
             except Exception as e:
                 show_error_popup(f"Failed to record sale: {e}")
 
-# --- 4. STOCK UPDATE / NEW ENTRY ---
+# --- 5. STOCK UPDATE / NEW ENTRY ---
 elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]:
     st.subheader("📝 Add / Update Inventory")
     product = st.text_input("Product Name / Brand (e.g., VKC, Paragon)", key="stock_product")
@@ -405,9 +446,9 @@ elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]
             except Exception as e:
                 show_error_popup(f"Failed to add stock: {e}")
 
-# --- 5. SALES ANALYTICS & EDIT/RETURN PAGE ---
+# --- 6. SALES ANALYTICS PAGE ---
 elif choice == "📊 Sales Analytics":
-    st.subheader("📊 Sales Analytics & Best Sellers")
+    st.subheader("📊 Sales Analytics & History")
     try:
         sales_res = supabase.table("sales").select("*").order("created_at", desc=True).execute()
         if sales_res.data:
@@ -420,37 +461,6 @@ elif choice == "📊 Sales Analytics":
             m1, m2 = st.columns(2)
             m1.metric("💰 Total Sales Revenue", f"₹ {total_rev:,.2f}")
             m2.metric("📦 Total Pairs Sold", f"{total_pairs_sold} Pairs")
-            
-            st.divider()
-            
-            # --- TOP SELLING PRODUCTS (BIG TO SMALL) ---
-            st.subheader("🏆 Top Selling Products (Big to Small)")
-            st.caption("Products sorted by total quantity sold (highest demand first).")
-            
-            top_selling_df = sdf.groupby("art_no").agg(
-                total_pairs_sold=("quantity", "sum"),
-                total_revenue=("total", "sum")
-            ).reset_index()
-            
-            # Sort Big to Small (Descending Order)
-            top_selling_df = top_selling_df.sort_values(by="total_pairs_sold", ascending=False)
-            
-            top_selling_df = top_selling_df.rename(columns={
-                "art_no": "Art No / Brand",
-                "total_pairs_sold": "Total Pairs Sold 📦",
-                "total_revenue": "Total Revenue (₹) 💰"
-            })
-            
-            st.dataframe(
-                top_selling_df,
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Chart Visualization
-            st.subheader("📈 Top Demand Chart")
-            chart_data = top_selling_df.set_index("Art No / Brand")["Total Pairs Sold 📦"]
-            st.bar_chart(chart_data)
             
             st.divider()
             st.subheader("📜 Detailed Sales Log History")
