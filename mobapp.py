@@ -5,7 +5,11 @@ import qrcode
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
+import pytz
 from supabase import create_client, Client
+
+# --- INDIA TIMEZONE (IST) SETUP ---
+IST = pytz.timezone('Asia/Kolkata')
 
 # Page Config
 st.set_page_config(page_title="Fayas Footwear", page_icon="👞", layout="wide")
@@ -34,7 +38,7 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Session State
+# Session State Initializations
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "sale_art" not in st.session_state:
@@ -66,7 +70,8 @@ def generate_fancy_bill_image(art_no, size, qty, price, total_amount, bill_no):
     draw.text((width // 2, 42), "FAYAS FOOTWEAR", fill="white", font=title_font, anchor="mm")
     draw.text((width // 2, 75), "PREMIUM FOOTWEAR COLLECTION • SINCE 2016", fill="#FFC107", font=subtitle_font, anchor="mm")
 
-    current_time = datetime.now().strftime("%d %b %Y, %I:%M %p")
+    # Current Exact India Time (IST)
+    current_time = datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
     draw.text((30, 130), f"Invoice No : {bill_no}", fill="#333333", font=bold_font)
     draw.text((30, 155), f"Date         : {current_time}", fill="#666666", font=text_font)
     draw.text((30, 180), "Payment   : CASH (PAID)", fill="#28A745", font=bold_font)
@@ -137,10 +142,8 @@ else:
         st.session_state["logged_in"] = False
         st.rerun()
 
-# Public navigation options
 nav_options = ["📦 Live Stock", "🔥 Fast Selling Products", "📊 Sales Analytics"]
 
-# Admin-only navigation options
 if st.session_state["logged_in"]:
     nav_options = [
         "📦 Live Stock", 
@@ -272,7 +275,7 @@ elif choice == "❄️ Dead Stock Finder" and st.session_state["logged_in"]:
             sales_df = pd.DataFrame(sales_data) if sales_data else pd.DataFrame()
             
             if "created_at" in stock_df.columns:
-                stock_df["stock_added_date"] = pd.to_datetime(stock_df["created_at"]).dt.strftime("%d %b %Y")
+                stock_df["stock_added_date"] = pd.to_datetime(stock_df["created_at"]).dt.tz_convert(IST).dt.strftime("%d %b %Y")
             else:
                 stock_df["stock_added_date"] = "N/A"
 
@@ -282,8 +285,8 @@ elif choice == "❄️ Dead Stock Finder" and st.session_state["logged_in"]:
             last_sold_map = {}
             
             if not sales_df.empty:
-                sales_df["created_at"] = pd.to_datetime(sales_df["created_at"], utc=True)
-                cutoff_date = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days_filter)
+                sales_df["created_at"] = pd.to_datetime(sales_df["created_at"], utc=True).dt.tz_convert(IST)
+                cutoff_date = pd.Timestamp.now(tz=IST) - pd.Timedelta(days=days_filter)
                 
                 recent_sales = sales_df[sales_df["created_at"] >= cutoff_date]
                 sold_art_numbers = set(recent_sales["art_no"].astype(str).str.lower().unique())
@@ -380,7 +383,6 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
             show_error_popup("Please enter or select Art No / Brand.")
         else:
             try:
-                # Stock Match
                 stock_res = supabase.table("stock").select("*").eq("size", size).execute()
                 matched_item = None
                 
@@ -401,7 +403,6 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                 elif matched_item["quantity"] < qty:
                     show_error_popup(f"⚠️ Insufficient Stock!\n\nAvailable Stock: {matched_item['quantity']} pairs\nRequested Quantity: {qty} pairs")
                 else:
-                    # Insert sale record with gender
                     supabase.table("sales").insert({
                         "art_no": art_no, "gender": gender, "size": size, "quantity": qty, "price": price
                     }).execute()
@@ -413,7 +414,8 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                     st.success(f"✅ Sale Recorded! Stock updated from {current_qty} to {new_qty} pairs.")
                     
                     if record_and_bill:
-                        bill_no = f"FFW-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        # Bill No created using exact IST time
+                        bill_no = f"FFW-{datetime.now(IST).strftime('%Y%m%d%H%M%S')}"
                         total_amount = qty * price
                         bill_bytes = generate_fancy_bill_image(art_no, size, qty, price, total_amount, bill_no)
                         
@@ -492,7 +494,9 @@ elif choice == "📊 Sales Analytics":
                 return "Footwear", art_str
 
             sdf[["product", "clean_art_no"]] = sdf["art_no"].apply(lambda x: pd.Series(extract_product_and_art(x)))
-            sdf["formatted_time"] = pd.to_datetime(sdf["created_at"]).dt.strftime("%d %b %Y, %I:%M %p")
+            
+            # --- CONVERT UTC TIMESTAMP TO INDIA TIME (IST) FOR TABLE DISPLAY ---
+            sdf["formatted_time"] = pd.to_datetime(sdf["created_at"], utc=True).dt.tz_convert(IST).dt.strftime("%d %b %Y, %I:%M %p")
             sdf["sno"] = range(1, len(sdf) + 1)
             sdf["total"] = sdf["quantity"] * sdf["price"]
             
