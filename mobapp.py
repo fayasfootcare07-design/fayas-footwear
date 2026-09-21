@@ -2,72 +2,115 @@ import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
 
-# Supabase Connection
-SUPABASE_URL = "https://wcyhspgdtwahmymvmndx.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjeWhzcGdkdHdhaG15bXZtbmR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5MDEzNjUsImV4cCI6MjEwNTQ3NzM2NX0.5an7raOBnK2FYY1SZf316Q8Ah76iJe5Cz8NjSXFrhWQ"
+# Page config
+st.set_page_config(page_title="Fayas Footwear", page_icon="👞", layout="centered")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Supabase Initialization
+@st.cache_resource
+def init_supabase():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-st.set_page_config(page_title="FAYAS FOOTWEAR - Mobile Dashboard", layout="wide")
-st.title("👟 FAYAS FOOTWEAR")
+try:
+    supabase = init_supabase()
+except Exception as e:
+    # Fallback to direct credentials if secrets are not configured yet
+    SUPABASE_URL = "https://your-supabase-url.supabase.co"
+    SUPABASE_KEY = "your-supabase-anon-key"
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+st.title("👞 FAYAS FOOTWEAR")
 st.caption("Live Cloud Inventory & Sales Dashboard")
 
-menu = st.sidebar.radio("Navigation", ["📦 Live Stock", "📊 Sales Analytics", "➕ Quick Sale Entry"])
+# Admin Login Security
+st.sidebar.title("🔐 Access Control")
+is_admin = False
 
-if menu == "📦 Live Stock":
+admin_toggle = st.sidebar.checkbox("Admin Access Mode")
+if admin_toggle:
+    password = st.sidebar.text_input("Enter Admin Password", type="password")
+    if password == "Fayas786":
+        is_admin = True
+        st.sidebar.success("Logged in as Admin!")
+    elif password:
+        st.sidebar.error("Incorrect Password!")
+
+# Navigation
+menu_options = ["📦 Live Stock", "📊 Sales Analytics"]
+if is_admin:
+    menu_options.append("➕ Quick Sale Entry")
+    menu_options.append("📝 Stock Update / New Entry")
+
+choice = st.sidebar.radio("Navigation", menu_options)
+
+# 1. LIVE STOCK VIEW
+if choice == "📦 Live Stock":
     st.subheader("📦 Live Stock Status")
     try:
-        res = supabase.table("inventory").select("*").execute()
-        if res.data:
-            df = pd.DataFrame(res.data)
+        response = supabase.table("stock").select("*").execute()
+        df = pd.DataFrame(response.data)
+        if not df.empty:
             st.dataframe(df, use_container_width=True)
-            
-            # Low Stock Alert
-            low_stock = df[df['quantity'] <= 2]
-            if not low_stock.empty:
-                st.error("⚠️ Low Stock Alert (Quantity <= 2)")
-                st.dataframe(low_stock)
         else:
             st.info("No stock data found.")
     except Exception as e:
-        st.error(f"Error loading stock: {e}")
+        st.error(f"Error fetching stock: {e}")
 
-elif menu == "📊 Sales Analytics":
-    st.subheader("📊 Live Sales Report")
+# 2. SALES ANALYTICS VIEW
+elif choice == "📊 Sales Analytics":
+    st.subheader("📊 Sales Analytics")
     try:
-        res = supabase.table("sales").select("*").order("id", desc=True).execute()
-        if res.data:
-            df = pd.DataFrame(res.data)
-            st.metric("Total Overall Collection", f"₹ {df['amount'].sum():,.2f}")
+        response = supabase.table("sales").select("*").execute()
+        df = pd.DataFrame(response.data)
+        if not df.empty:
             st.dataframe(df, use_container_width=True)
         else:
             st.info("No sales records found.")
     except Exception as e:
-        st.error(f"Error loading sales: {e}")
+        st.error(f"Error fetching sales: {e}")
 
-elif menu == "➕ Quick Sale Entry":
-    st.subheader("➕ Mobile Sale Entry")
-    with st.form("mobile_sale_form"):
-        product = st.text_input("Product Name")
-        gender = st.selectbox("Gender", ["Gents", "Ladies", "Kids"])
+# 3. QUICK SALE ENTRY (ADMIN ONLY)
+elif choice == "➕ Quick Sale Entry" and is_admin:
+    st.subheader("➕ Record New Sale")
+    with st.form("sale_form"):
+        art_no = st.text_input("Art No / Model")
+        size = st.text_input("Size")
+        qty = st.number_input("Quantity Sold", min_value=1, value=1)
+        price = st.number_input("Price per Pair", min_value=0, value=0)
+        submitted = st.form_submit_button("Save Sale")
+        
+        if submitted:
+            data = {"art_no": art_no, "size": size, "quantity": qty, "price": price}
+            try:
+                supabase.table("sales").insert(data).execute()
+                st.success("Sale entry saved successfully!")
+            except Exception as e:
+                st.error(f"Error saving sale: {e}")
+
+# 4. STOCK UPDATE (ADMIN ONLY)
+elif choice == "📝 Stock Update / New Entry" and is_admin:
+    st.subheader("📝 Add / Update Stock")
+    with st.form("stock_form"):
+        product = st.text_input("Brand / Product Name (e.g., VKC)")
+        gender = st.selectbox("Gender", ["gents", "ladies", "kids"])
         art_no = st.text_input("Art No")
         size = st.text_input("Size")
-        payment_type = st.radio("Payment Type", ["Cash", "UPI"], horizontal=True)
-        amount = st.number_input("Amount (₹)", min_value=0.0, step=10.0)
+        qty = st.number_input("Stock Quantity", min_value=1, value=1)
+        price = st.number_input("Selling Price", min_value=0, value=0)
         
-        submitted = st.form_submit_button("Save & Sync Sale")
-
+        submitted = st.form_submit_button("Update Stock")
         if submitted:
-            if product and art_no and size and amount > 0:
-                sale_data = {
-                    "product": product,
-                    "gender": gender,
-                    "art_no": art_no,
-                    "size": size,
-                    "payment_type": payment_type,
-                    "amount": amount
-                }
-                supabase.table("sales").insert(sale_data).execute()
-                st.success("✅ Sale Saved & Synced to Cloud!")
-            else:
-                st.warning("Please fill all required fields.")
+            data = {
+                "product": product,
+                "gender": gender,
+                "art_no": art_no,
+                "size": size,
+                "quantity": qty,
+                "price": price
+            }
+            try:
+                supabase.table("stock").insert(data).execute()
+                st.success("Stock updated successfully in Supabase!")
+            except Exception as e:
+                st.error(f"Error updating stock: {e}")
