@@ -110,22 +110,23 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
         stock_df = pd.DataFrame()
         selected_item = "-- Custom / Manual Entry --"
 
-    with st.form("sale_form"):
-        if selected_item != "-- Custom / Manual Entry --" and not stock_df.empty:
-            matched_row = stock_df[stock_df.apply(lambda r: f"{r['product']} - Art:{r['art_no']} (Size: {r['size']})" == selected_item, axis=1)].iloc[0]
-            default_art = str(matched_row['art_no'])
-            default_size = str(matched_row['size'])
-            default_price = float(matched_row['price'])
-        else:
-            default_art, default_size, default_price = "", "", 0.0
+    if selected_item != "-- Custom / Manual Entry --" and not stock_df.empty:
+        matched_row = stock_df[stock_df.apply(lambda r: f"{r['product']} - Art:{r['art_no']} (Size: {r['size']})" == selected_item, axis=1)].iloc[0]
+        default_art = str(matched_row['art_no'])
+        default_size = str(matched_row['size'])
+        default_price = float(matched_row['price'])
+    else:
+        default_art, default_size, default_price = "", "", 0.0
 
-        art_no = st.text_input("Art No / Brand", value=default_art)
-        size = st.text_input("Size", value=default_size)
-        qty = st.number_input("Quantity Sold", min_value=1, value=1, step=1)
-        price = st.number_input("Price per Unit (₹)", min_value=0.0, value=default_price, step=10.0)
-        
-        submitted = st.form_submit_button("Record Sale & Deduct Stock")
-        if submitted:
+    art_no = st.text_input("Art No / Brand", value=default_art, key="sale_art")
+    size = st.text_input("Size", value=default_size, key="sale_size")
+    qty = st.number_input("Quantity Sold", min_value=1, value=1, step=1, key="sale_qty")
+    price = st.number_input("Price per Unit (₹)", min_value=0.0, value=default_price, step=10.0, key="sale_price")
+    
+    if st.button("Record Sale & Deduct Stock", type="primary"):
+        if not art_no:
+            st.warning("Please enter Art No / Brand.")
+        else:
             try:
                 # Insert to Sales Table
                 supabase.table("sales").insert({
@@ -157,16 +158,17 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
 elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]:
     st.subheader("📝 Add / Update Inventory")
     
-    with st.form("stock_form"):
-        product = st.text_input("Product Name / Brand (e.g., VKC, Paragon)")
-        gender = st.selectbox("Gender Category", ["Gents", "Ladies", "Kids"])
-        art_no = st.text_input("Art No")
-        size = st.text_input("Size")
-        qty = st.number_input("Quantity", min_value=1, value=10, step=1)
-        price = st.number_input("Price (₹)", min_value=0.0, step=10.0)
-        
-        submitted = st.form_submit_button("Add Stock")
-        if submitted:
+    product = st.text_input("Product Name / Brand (e.g., VKC, Paragon)", key="stock_product")
+    gender = st.selectbox("Gender Category", ["Gents", "Ladies", "Kids"], key="stock_gender")
+    art_no = st.text_input("Art No", key="stock_art")
+    size = st.text_input("Size", key="stock_size")
+    qty = st.number_input("Quantity", min_value=1, value=10, step=1, key="stock_qty")
+    price = st.number_input("Price (₹)", min_value=0.0, step=10.0, key="stock_price")
+    
+    if st.button("Add Stock", type="primary"):
+        if not product or not art_no:
+            st.warning("Please fill Product Name and Art No.")
+        else:
             try:
                 supabase.table("stock").insert({
                     "product": product, "gender": gender, "art_no": art_no,
