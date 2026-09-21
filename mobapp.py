@@ -135,9 +135,18 @@ else:
         st.session_state["logged_in"] = False
         st.rerun()
 
-nav_options = ["📦 Live Stock", "❄️ Dead Stock Finder", "📊 Sales Analytics"]
+# Public navigation options
+nav_options = ["📦 Live Stock", "📊 Sales Analytics"]
+
+# Admin-only navigation options
 if st.session_state["logged_in"]:
-    nav_options.extend(["➕ Quick Sale Entry", "📝 Stock Update / New Entry"])
+    nav_options = [
+        "📦 Live Stock", 
+        "❄️ Dead Stock Finder", 
+        "📊 Sales Analytics", 
+        "➕ Quick Sale Entry", 
+        "📝 Stock Update / New Entry"
+    ]
 
 choice = st.sidebar.radio("Navigation", nav_options)
 
@@ -186,8 +195,8 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. DEAD STOCK FINDER PAGE ---
-elif choice == "❄️ Dead Stock Finder":
+# --- 2. DEAD STOCK FINDER PAGE (ADMIN ONLY) ---
+elif choice == "❄️ Dead Stock Finder" and st.session_state["logged_in"]:
     st.subheader("❄️ Dead Stock & Capital Lock Finder")
     st.caption("Find products that haven't been sold for days & holding your business capital.")
     
@@ -202,7 +211,6 @@ elif choice == "❄️ Dead Stock Finder":
             stock_df = pd.DataFrame(stock_data)
             sales_df = pd.DataFrame(sales_data) if sales_data else pd.DataFrame()
             
-            # Format Stock Entry Date (created_at)
             if "created_at" in stock_df.columns:
                 stock_df["stock_added_date"] = pd.to_datetime(stock_df["created_at"]).dt.strftime("%d %b %Y")
             else:
