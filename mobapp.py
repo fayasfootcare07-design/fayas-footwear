@@ -112,31 +112,49 @@ if choice == "📦 Live Stock":
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# --- 2. QUICK SALE ENTRY ---
+# --- 2. QUICK SALE ENTRY (WITH SMART AUTO-POPUP SUGGESTIONS) ---
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
+    # Fetch current live stock for auto-suggestions
     try:
         stock_data = supabase.table("stock").select("*").execute().data
-        if stock_data:
-            stock_df = pd.DataFrame(stock_data)
-            items_list = [f"{row['product']} - Art:{row['art_no']} (Size: {row['size']})" for _, row in stock_df.iterrows()]
-            selected_item = st.selectbox("Select Existing Item from Stock (Optional)", ["-- Custom / Manual Entry --"] + items_list)
-        else:
-            stock_df = pd.DataFrame()
-            selected_item = "-- Custom / Manual Entry --"
+        stock_df = pd.DataFrame(stock_data) if stock_data else pd.DataFrame()
     except:
         stock_df = pd.DataFrame()
-        selected_item = "-- Custom / Manual Entry --"
 
-    if selected_item != "-- Custom / Manual Entry --" and not stock_df.empty:
-        matched_row = stock_df[stock_df.apply(lambda r: f"{r['product']} - Art:{r['art_no']} (Size: {r['size']})" == selected_item, axis=1)].iloc[0]
-        default_art = str(matched_row['art_no'])
-        default_size = str(matched_row['size'])
-        default_price = float(matched_row['price'])
-    else:
-        default_art, default_size, default_price = "", "", 0.0
+    # Step 1: Type Brand / Company Name
+    search_brand = st.text_input("🔍 Type Company / Brand Name (e.g., mark, paragon, vkc)", key="search_brand_key")
+    
+    selected_row = None
+    if not stock_df.empty and search_brand.strip():
+        # Filter stock matching the typed brand or art_no
+        matched_df = stock_df[
+            stock_df["product"].str.contains(search_brand, case=False, na=False) |
+            stock_df["art_no"].str.contains(search_brand, case=False, na=False)
+        ]
+        
+        if not matched_df.empty:
+            options = ["-- Select Stock Item --"] + [
+                f"{row['product']} | Art:{row['art_no']} | Size:{row['size']} | MRP: ₹{row['price']} | Stock:{row['quantity']} pairs" 
+                for _, row in matched_df.iterrows()
+            ]
+            selected_option = st.selectbox(f"🎯 Available Stock Suggestions for '{search_brand}' (Click to Auto-fill):", options)
+            
+            if selected_option != "-- Select Stock Item --":
+                match_index = options.index(selected_option) - 1
+                selected_row = matched_df.iloc[match_index]
+        else:
+            st.warning(f"No stock found matching '{search_brand}'")
 
+    # Step 2: Auto-filled Default Values
+    default_art = str(selected_row['art_no']) if selected_row is not None else ""
+    default_size = str(selected_row['size']) if selected_row is not None else ""
+    default_price = float(selected_row['price']) if selected_row is not None else 0.0
+
+    st.divider()
+
+    # Form Fields
     art_no = st.text_input("Art No / Brand", value=default_art, key="sale_art")
     size = st.text_input("Size", value=default_size, key="sale_size")
     qty = st.number_input("Quantity Sold", min_value=1, value=1, step=1, key="sale_qty")
@@ -144,15 +162,15 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     
     if st.button("Record Sale & Deduct Stock", type="primary"):
         if not art_no:
-            st.warning("Please enter Art No / Brand.")
+            st.warning("Please enter or select Art No / Brand.")
         else:
             try:
-                # Insert to Sales Table
+                # Insert into Sales Table
                 supabase.table("sales").insert({
                     "art_no": art_no, "size": size, "quantity": qty, "price": price
                 }).execute()
                 
-                # Flexible Search: Check matching Art No or Product Name with Size
+                # Check matching item in Stock and Deduct Quantity
                 stock_res = supabase.table("stock").select("*").eq("size", size).execute()
                 matched_item = None
                 
