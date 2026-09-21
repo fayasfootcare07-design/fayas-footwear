@@ -15,7 +15,6 @@ def init_supabase():
 try:
     supabase = init_supabase()
 except Exception as e:
-    # Fallback to direct credentials if secrets are not configured yet
     SUPABASE_URL = "https://your-supabase-url.supabase.co"
     SUPABASE_KEY = "your-supabase-anon-key"
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -23,20 +22,31 @@ except Exception as e:
 st.title("👞 FAYAS FOOTWEAR")
 st.caption("Live Cloud Inventory & Sales Dashboard")
 
-# Admin Login Security
+# Admin Session Memory Management
+if "admin_logged_in" not in st.session_state:
+    st.session_state["admin_logged_in"] = False
+
 st.sidebar.title("🔐 Access Control")
-is_admin = False
 
-admin_toggle = st.sidebar.checkbox("Admin Access Mode")
-if admin_toggle:
-    password = st.sidebar.text_input("Enter Admin Password", type="password")
-    if password == "Fayas786":
-        is_admin = True
-        st.sidebar.success("Logged in as Admin!")
-    elif password:
-        st.sidebar.error("Incorrect Password!")
+# Admin Login/Logout System
+if not st.session_state["admin_logged_in"]:
+    pwd_input = st.sidebar.text_input("Enter Admin Password", type="password")
+    if st.sidebar.button("Login as Admin"):
+        if pwd_input == "Fayas786":
+            st.session_state["admin_logged_in"] = True
+            st.sidebar.success("Logged in successfully!")
+            st.rerun()
+        else:
+            st.sidebar.error("Incorrect Password!")
+else:
+    st.sidebar.success("Logged in as Admin 🔓")
+    if st.sidebar.button("Logout"):
+        st.session_state["admin_logged_in"] = False
+        st.rerun()
 
-# Navigation
+is_admin = st.session_state["admin_logged_in"]
+
+# Navigation Menu
 menu_options = ["📦 Live Stock", "📊 Sales Analytics"]
 if is_admin:
     menu_options.append("➕ Quick Sale Entry")
