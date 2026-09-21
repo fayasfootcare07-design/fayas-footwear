@@ -5,11 +5,10 @@ import qrcode
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
-import pytz
-from supabase import create_client, Client
+from zoneinfo import ZoneInfo
 
-# --- INDIA TIMEZONE (IST) SETUP ---
-IST = pytz.timezone('Asia/Kolkata')
+# --- INDIA TIMEZONE (IST) SETUP WITHOUT PYTZ ---
+IST = ZoneInfo('Asia/Kolkata')
 
 # Page Config
 st.set_page_config(page_title="Fayas Footwear", page_icon="👞", layout="wide")
@@ -36,6 +35,8 @@ components.html(enter_to_next_js, height=0, width=0)
 # Supabase Credentials Setup
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
+from supabase import create_client, Client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Session State Initializations
@@ -414,7 +415,6 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                     st.success(f"✅ Sale Recorded! Stock updated from {current_qty} to {new_qty} pairs.")
                     
                     if record_and_bill:
-                        # Bill No created using exact IST time
                         bill_no = f"FFW-{datetime.now(IST).strftime('%Y%m%d%H%M%S')}"
                         total_amount = qty * price
                         bill_bytes = generate_fancy_bill_image(art_no, size, qty, price, total_amount, bill_no)
@@ -495,7 +495,7 @@ elif choice == "📊 Sales Analytics":
 
             sdf[["product", "clean_art_no"]] = sdf["art_no"].apply(lambda x: pd.Series(extract_product_and_art(x)))
             
-            # --- CONVERT UTC TIMESTAMP TO INDIA TIME (IST) FOR TABLE DISPLAY ---
+            # --- CONVERT UTC TIMESTAMP TO INDIA TIME (IST) USING ZONEINFO ---
             sdf["formatted_time"] = pd.to_datetime(sdf["created_at"], utc=True).dt.tz_convert(IST).dt.strftime("%d %b %Y, %I:%M %p")
             sdf["sno"] = range(1, len(sdf) + 1)
             sdf["total"] = sdf["quantity"] * sdf["price"]
