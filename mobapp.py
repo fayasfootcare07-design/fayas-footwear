@@ -1,126 +1,160 @@
 import streamlit as st
-from supabase import create_client, Client
 import pandas as pd
+from supabase import create_client, Client
 
-# Page config
-st.set_page_config(page_title="Fayas Footwear", page_icon="👞", layout="centered")
+# Page Config
+st.set_page_config(page_title="Fayas Footwear", page_icon="👞", layout="wide")
 
-# Supabase Initialization
-@st.cache_resource
-def init_supabase():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
+# Supabase Credentials Setup
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-try:
-    supabase = init_supabase()
-except Exception as e:
-    SUPABASE_URL = "https://your-supabase-url.supabase.co"
-    SUPABASE_KEY = "your-supabase-anon-key"
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Session State for Authentication
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
 
+# --- SIDEBAR ACCESS CONTROL ---
+st.sidebar.title("🔐 Access Control")
+
+if not st.session_state["logged_in"]:
+    admin_password = st.sidebar.text_input("Enter Admin Password", type="password")
+    if st.sidebar.button("Login as Admin"):
+        if admin_password == "Fayas786":
+            st.session_state["logged_in"] = True
+            st.sidebar.success("Logged in as Admin 🔓")
+            st.rerun()
+        else:
+            st.sidebar.error("Incorrect Password")
+else:
+    st.sidebar.success("Logged in as Admin 🔒")
+    if st.sidebar.button("Logout"):
+        st.session_state["logged_in"] = False
+        st.rerun()
+
+# Sidebar Navigation Options
+nav_options = ["📦 Live Stock", "📊 Sales Analytics"]
+if st.session_state["logged_in"]:
+    nav_options.extend(["➕ Quick Sale Entry", "📝 Stock Update / New Entry"])
+
+choice = st.sidebar.radio("Navigation", nav_options)
+
+# --- HEADER ---
 st.title("👞 FAYAS FOOTWEAR")
 st.caption("Live Cloud Inventory & Sales Dashboard")
 
-# Admin Session Memory Management
-if "admin_logged_in" not in st.session_state:
-    st.session_state["admin_logged_in"] = False
-
-st.sidebar.title("🔐 Access Control")
-
-# Admin Login/Logout System
-if not st.session_state["admin_logged_in"]:
-    pwd_input = st.sidebar.text_input("Enter Admin Password", type="password")
-    if st.sidebar.button("Login as Admin"):
-        if pwd_input == "Fayas786":
-            st.session_state["admin_logged_in"] = True
-            st.sidebar.success("Logged in successfully!")
-            st.rerun()
-        else:
-            st.sidebar.error("Incorrect Password!")
-else:
-    st.sidebar.success("Logged in as Admin 🔓")
-    if st.sidebar.button("Logout"):
-        st.session_state["admin_logged_in"] = False
-        st.rerun()
-
-is_admin = st.session_state["admin_logged_in"]
-
-# Navigation Menu
-menu_options = ["📦 Live Stock", "📊 Sales Analytics"]
-if is_admin:
-    menu_options.append("➕ Quick Sale Entry")
-    menu_options.append("📝 Stock Update / New Entry")
-
-choice = st.sidebar.radio("Navigation", menu_options)
-
-# 1. LIVE STOCK VIEW
+# --- 1. LIVE STOCK PAGE ---
 if choice == "📦 Live Stock":
     st.subheader("📦 Live Stock Status")
+    
     try:
         response = supabase.table("stock").select("*").execute()
-        df = pd.DataFrame(response.data)
-        if not df.empty:
-            st.dataframe(df, use_container_width=True)
+        data = response.data
+        
+        if data:
+            df = pd.DataFrame(data)
+            
+            # --- KPI METRICS TOP SUMMARY ---
+            col1, col2, col3 = st.columns(3)
+            total_pairs = df["quantity"].sum()
+            df["total_val"] = df["quantity"] * df["price"]
+            total_val = df["total_val"].sum()
+            low_stock_cnt = len(df[df["quantity"] <= 3])
+            
+            col1.metric("Total Pairs", f"{total_pairs} Pairs")
+            col2.metric("Stock Valuation", f"₹ {total_val:,.2f}")
+            col3.metric("Low Stock Items", f"{low_stock_cnt} Items", delta_color="inverse")
+            
+            st.divider()
+            
+            # --- SEARCH & FILTER BAR ---
+            col_s1, col_s2 = st.columns(2)
+            search_art = col_s1.text_input("🔍 Search Art No / Product")
+            gender_filter = col_s2.selectbox("Filter Gender", ["All", "Gents", "Ladies", "Kids"])
+            
+            filtered_df = df.copy()
+            if search_art:
+                filtered_df = filtered_df[filtered_df["art_no"].str.contains(search_art, case=False, na=False) | 
+                                          filtered_df["product"].str.contains(search_art, case=False, na=False)]
+            if gender_filter != "All":
+                filtered_df = filtered_df[filtered_df["gender"] == gender_filter]
+                
+            # --- DISPLAY TABLE ---
+            st.dataframe(
+                filtered_df[["product", "gender", "art_no", "size", "quantity", "price"]],
+                use_container_width=True,
+                hide_index=True
+            )
         else:
             st.info("No stock data found.")
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
 
-# 2. SALES ANALYTICS VIEW
-elif choice == "📊 Sales Analytics":
-    st.subheader("📊 Sales Analytics")
-    try:
-        response = supabase.table("sales").select("*").execute()
-        df = pd.DataFrame(response.data)
-        if not df.empty:
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("No sales records found.")
-    except Exception as e:
-        st.error(f"Error fetching sales: {e}")
-
-# 3. QUICK SALE ENTRY (ADMIN ONLY)
-elif choice == "➕ Quick Sale Entry" and is_admin:
-    st.subheader("➕ Record New Sale")
+# --- 2. QUICK SALE ENTRY ---
+elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
+    st.subheader("➕ Quick Sale Entry")
+    
     with st.form("sale_form"):
-        art_no = st.text_input("Art No / Model")
+        art_no = st.text_input("Art No / Brand")
         size = st.text_input("Size")
-        qty = st.number_input("Quantity Sold", min_value=1, value=1)
-        price = st.number_input("Price per Pair", min_value=0, value=0)
-        submitted = st.form_submit_button("Save Sale")
+        qty = st.number_input("Quantity Sold", min_value=1, value=1, step=1)
+        price = st.number_input("Price per Unit (₹)", min_value=0.0, step=10.0)
         
+        submitted = st.form_submit_button("Record Sale & Deduct Stock")
         if submitted:
-            data = {"art_no": art_no, "size": size, "quantity": qty, "price": price}
             try:
-                supabase.table("sales").insert(data).execute()
-                st.success("Sale entry saved successfully!")
+                # Insert to Sales Table
+                supabase.table("sales").insert({
+                    "art_no": art_no, "size": size, "quantity": qty, "price": price
+                }).execute()
+                
+                # Check and Deduct from Stock Table
+                stock_res = supabase.table("stock").select("*").eq("art_no", art_no).eq("size", size).execute()
+                if stock_res.data:
+                    current_qty = stock_res.data[0]["quantity"]
+                    new_qty = max(0, current_qty - qty)
+                    supabase.table("stock").update({"quantity": new_qty}).eq("id", stock_res.data[0]["id"]).execute()
+                    st.success(f"Sale Recorded! Stock updated from {current_qty} to {new_qty}.")
+                else:
+                    st.warning("Sale recorded, but matching Art No and Size not found in Stock.")
             except Exception as e:
-                st.error(f"Error saving sale: {e}")
+                st.error(f"Failed to record sale: {e}")
 
-# 4. STOCK UPDATE (ADMIN ONLY)
-elif choice == "📝 Stock Update / New Entry" and is_admin:
-    st.subheader("📝 Add / Update Stock")
+# --- 3. STOCK UPDATE / NEW ENTRY ---
+elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]:
+    st.subheader("📝 Add / Update Inventory")
+    
     with st.form("stock_form"):
-        product = st.text_input("Brand / Product Name (e.g., VKC)")
-        gender = st.selectbox("Gender", ["gents", "ladies", "kids"])
+        product = st.text_input("Product Name / Brand (e.g., VKC, Paragon)")
+        gender = st.selectbox("Gender Category", ["Gents", "Ladies", "Kids"])
         art_no = st.text_input("Art No")
         size = st.text_input("Size")
-        qty = st.number_input("Stock Quantity", min_value=1, value=1)
-        price = st.number_input("Selling Price", min_value=0, value=0)
+        qty = st.number_input("Quantity", min_value=1, value=10, step=1)
+        price = st.number_input("Price (₹)", min_value=0.0, step=10.0)
         
-        submitted = st.form_submit_button("Update Stock")
+        submitted = st.form_submit_button("Add Stock")
         if submitted:
-            data = {
-                "product": product,
-                "gender": gender,
-                "art_no": art_no,
-                "size": size,
-                "quantity": qty,
-                "price": price
-            }
             try:
-                supabase.table("stock").insert(data).execute()
-                st.success("Stock updated successfully in Supabase!")
+                supabase.table("stock").insert({
+                    "product": product, "gender": gender, "art_no": art_no,
+                    "size": size, "quantity": qty, "price": price
+                }).execute()
+                st.success("New stock item added successfully!")
             except Exception as e:
-                st.error(f"Error updating stock: {e}")
+                st.error(f"Failed to add stock: {e}")
+
+# --- 4. SALES ANALYTICS ---
+elif choice == "📊 Sales Analytics":
+    st.subheader("📊 Sales Analytics & History")
+    try:
+        sales_res = supabase.table("sales").select("*").execute()
+        if sales_res.data:
+            sdf = pd.DataFrame(sales_res.data)
+            sdf["total"] = sdf["quantity"] * sdf["price"]
+            
+            st.metric("Total Sales Generated", f"₹ {sdf['total'].sum():,.2f}")
+            st.dataframe(sdf[["created_at", "art_no", "size", "quantity", "price", "total"]], use_container_width=True)
+        else:
+            st.info("No sales recorded yet.")
+    except Exception as e:
+        st.error(f"Error fetching sales: {e}")
