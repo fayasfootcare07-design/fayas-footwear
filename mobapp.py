@@ -1,9 +1,29 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from supabase import create_client, Client
 
 # Page Config
 st.set_page_config(page_title="Fayas Footwear", page_icon="👞", layout="wide")
+
+# JavaScript to move focus on Enter Key press
+enter_to_next_js = """
+<script>
+const doc = window.parent.document;
+doc.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        const inputs = Array.from(doc.querySelectorAll('input, select'));
+        const active = doc.activeElement;
+        const index = inputs.indexOf(active);
+        if (index > -1 && index < inputs.length - 1) {
+            e.preventDefault();
+            inputs[index + 1].focus();
+        }
+    }
+}, true);
+</script>
+"""
+components.html(enter_to_next_js, height=0, width=0)
 
 # Supabase Credentials Setup
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -96,7 +116,6 @@ if choice == "📦 Live Stock":
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
-    # Existing Stock List Select Box Option for easy selection
     try:
         stock_data = supabase.table("stock").select("*").execute().data
         if stock_data:
