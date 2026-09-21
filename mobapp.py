@@ -74,8 +74,10 @@ if choice == "📦 Live Stock":
             
             filtered_df = df.copy()
             if search_art:
-                filtered_df = filtered_df[filtered_df["art_no"].str.contains(search_art, case=False, na=False) | 
-                                          filtered_df["product"].str.contains(search_art, case=False, na=False)]
+                filtered_df = filtered_df[
+                    filtered_df["art_no"].str.contains(search_art, case=False, na=False) | 
+                    filtered_df["product"].str.contains(search_art, case=False, na=False)
+                ]
             if gender_filter != "All":
                 filtered_df = filtered_df[filtered_df["gender"] == gender_filter]
                 
@@ -94,11 +96,33 @@ if choice == "📦 Live Stock":
 elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
     st.subheader("➕ Quick Sale Entry")
     
+    # Existing Stock List Select Box Option for easy selection
+    try:
+        stock_data = supabase.table("stock").select("*").execute().data
+        if stock_data:
+            stock_df = pd.DataFrame(stock_data)
+            items_list = [f"{row['product']} - Art:{row['art_no']} (Size: {row['size']})" for _, row in stock_df.iterrows()]
+            selected_item = st.selectbox("Select Existing Item from Stock (Optional)", ["-- Custom / Manual Entry --"] + items_list)
+        else:
+            stock_df = pd.DataFrame()
+            selected_item = "-- Custom / Manual Entry --"
+    except:
+        stock_df = pd.DataFrame()
+        selected_item = "-- Custom / Manual Entry --"
+
     with st.form("sale_form"):
-        art_no = st.text_input("Art No / Brand")
-        size = st.text_input("Size")
+        if selected_item != "-- Custom / Manual Entry --" and not stock_df.empty:
+            matched_row = stock_df[stock_df.apply(lambda r: f"{r['product']} - Art:{r['art_no']} (Size: {r['size']})" == selected_item, axis=1)].iloc[0]
+            default_art = str(matched_row['art_no'])
+            default_size = str(matched_row['size'])
+            default_price = float(matched_row['price'])
+        else:
+            default_art, default_size, default_price = "", "", 0.0
+
+        art_no = st.text_input("Art No / Brand", value=default_art)
+        size = st.text_input("Size", value=default_size)
         qty = st.number_input("Quantity Sold", min_value=1, value=1, step=1)
-        price = st.number_input("Price per Unit (₹)", min_value=0.0, step=10.0)
+        price = st.number_input("Price per Unit (₹)", min_value=0.0, value=default_price, step=10.0)
         
         submitted = st.form_submit_button("Record Sale & Deduct Stock")
         if submitted:
@@ -108,15 +132,24 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                     "art_no": art_no, "size": size, "quantity": qty, "price": price
                 }).execute()
                 
-                # Check and Deduct from Stock Table
-                stock_res = supabase.table("stock").select("*").eq("art_no", art_no).eq("size", size).execute()
+                # Flexible Search: Check matching Art No or Product Name with Size
+                stock_res = supabase.table("stock").select("*").eq("size", size).execute()
+                matched_item = None
+                
                 if stock_res.data:
-                    current_qty = stock_res.data[0]["quantity"]
+                    for item in stock_res.data:
+                        if (art_no.lower() in str(item.get("art_no", "")).lower()) or \
+                           (art_no.lower() in str(item.get("product", "")).lower()):
+                            matched_item = item
+                            break
+                
+                if matched_item:
+                    current_qty = matched_item["quantity"]
                     new_qty = max(0, current_qty - qty)
-                    supabase.table("stock").update({"quantity": new_qty}).eq("id", stock_res.data[0]["id"]).execute()
-                    st.success(f"Sale Recorded! Stock updated from {current_qty} to {new_qty}.")
+                    supabase.table("stock").update({"quantity": new_qty}).eq("id", matched_item["id"]).execute()
+                    st.success(f"✅ Sale Recorded! Stock updated from {current_qty} to {new_qty}.")
                 else:
-                    st.warning("Sale recorded, but matching Art No and Size not found in Stock.")
+                    st.warning("⚠️ Sale recorded, but matching item/size not found in Stock to deduct.")
             except Exception as e:
                 st.error(f"Failed to record sale: {e}")
 
@@ -139,7 +172,7 @@ elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]
                     "product": product, "gender": gender, "art_no": art_no,
                     "size": size, "quantity": qty, "price": price
                 }).execute()
-                st.success("New stock item added successfully!")
+                st.success("✅ New stock item added successfully!")
             except Exception as e:
                 st.error(f"Failed to add stock: {e}")
 
