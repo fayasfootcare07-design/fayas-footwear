@@ -141,7 +141,7 @@ if st.session_state["logged_in"]:
 
 choice = st.sidebar.radio("Navigation", nav_options)
 
-st.title("`👞` FAYAS FOOTWEAR")
+st.title("``👞`` FAYAS FOOTWEAR")
 st.caption("Live Cloud Inventory & Sales Dashboard")
 
 # --- 1. LIVE STOCK PAGE ---
@@ -170,8 +170,8 @@ if choice == "📦 Live Stock":
             filtered_df = df.copy()
             if search_art:
                 filtered_df = filtered_df[
-                    filtered_df["art_no"].str.contains(search_art, case=False, na=False) | 
-                    filtered_df["product"].str.contains(search_art, case=False, na=False)
+                    filtered_df["art_no"].astype(str).str.contains(search_art, case=False, na=False) | 
+                    filtered_df["product"].astype(str).str.contains(search_art, case=False, na=False)
                 ]
             if gender_filter != "All":
                 filtered_df = filtered_df[filtered_df["gender"] == gender_filter]
@@ -205,22 +205,24 @@ elif choice == "❄️ Dead Stock Finder":
             days_filter = st.slider("Select Inactive Period (Days without sale):", min_value=7, max_value=120, value=30, step=7)
             
             sold_art_numbers = set()
+            last_sold_map = {}
+            
             if not sales_df.empty:
-                # Convert created_at to UTC timestamp safely
                 sales_df["created_at"] = pd.to_datetime(sales_df["created_at"], utc=True)
-                
-                # Cutoff date with UTC timezone
                 cutoff_date = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days_filter)
                 
-                # Filter sales in selected days
                 recent_sales = sales_df[sales_df["created_at"] >= cutoff_date]
                 sold_art_numbers = set(recent_sales["art_no"].astype(str).str.lower().unique())
+                
+                for art, group in sales_df.groupby(sales_df["art_no"].astype(str).str.lower()):
+                    latest_date = group["created_at"].max()
+                    last_sold_map[art] = latest_date.strftime("%d %b %Y")
             
-            # Find stock items with no sales in these days
             stock_df["art_no_clean"] = stock_df["art_no"].astype(str).str.lower()
             dead_stock_df = stock_df[~stock_df["art_no_clean"].isin(sold_art_numbers) & (stock_df["quantity"] > 0)].copy()
             
             if not dead_stock_df.empty:
+                dead_stock_df["last_sold_date"] = dead_stock_df["art_no_clean"].map(last_sold_map).fillna("Never Sold")
                 dead_stock_df["locked_amount"] = dead_stock_df["quantity"] * dead_stock_df["price"]
                 total_locked_capital = dead_stock_df["locked_amount"].sum()
                 total_dead_pairs = dead_stock_df["quantity"].sum()
@@ -231,8 +233,21 @@ elif choice == "❄️ Dead Stock Finder":
                 
                 st.warning(f"⚠️ {len(dead_stock_df)} stock entries have **ZERO sales** in the last {days_filter} days!")
                 
+                display_df = dead_stock_df[["product", "gender", "art_no", "size", "quantity", "price", "locked_amount", "last_sold_date"]].rename(
+                    columns={
+                        "product": "Product",
+                        "gender": "Gender",
+                        "art_no": "Art No",
+                        "size": "Size",
+                        "quantity": "Quantity",
+                        "price": "Price (₹)",
+                        "locked_amount": "Locked Amount (₹)",
+                        "last_sold_date": "Last Sold Date 📅"
+                    }
+                )
+                
                 st.dataframe(
-                    dead_stock_df[["product", "gender", "art_no", "size", "quantity", "price", "locked_amount"]],
+                    display_df,
                     use_container_width=True,
                     hide_index=True
                 )
