@@ -4,7 +4,7 @@ import pandas as pd
 import qrcode
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
-from datetime import datetime, timedelta
+from datetime import datetime
 from supabase import create_client, Client
 
 # Page Config
@@ -185,11 +185,12 @@ if choice == "📦 Live Stock":
                     filtered_df["art_no"].astype(str).str.contains(search_art, case=False, na=False) | 
                     filtered_df["product"].astype(str).str.contains(search_art, case=False, na=False)
                 ]
-            if gender_filter != "All":
+            if gender_filter != "All" and "gender" in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df["gender"] == gender_filter]
                 
+            cols_to_show = [c for c in ["product", "gender", "art_no", "size", "quantity", "price"] if c in filtered_df.columns]
             st.dataframe(
-                filtered_df[["product", "gender", "art_no", "size", "quantity", "price"]],
+                filtered_df[cols_to_show],
                 use_container_width=True,
                 hide_index=True
             )
@@ -211,7 +212,6 @@ elif choice == "🔥 Fast Selling Products":
             sdf = pd.DataFrame(sales_res.data)
             stdf = pd.DataFrame(stock_res.data) if stock_res.data else pd.DataFrame()
             
-            # Map product brand name from stock table
             art_to_product = {}
             if not stdf.empty:
                 for _, row in stdf.iterrows():
@@ -232,7 +232,6 @@ elif choice == "🔥 Fast Selling Products":
                 total_revenue=("total", "sum")
             ).reset_index()
             
-            # Big to Small Sort
             top_selling_df = top_selling_df.sort_values(by="total_pairs_sold", ascending=False)
             
             top_selling_df = top_selling_df.rename(columns={
@@ -308,32 +307,18 @@ elif choice == "❄️ Dead Stock Finder" and st.session_state["logged_in"]:
                 
                 st.warning(f"⚠️ {len(dead_stock_df)} stock entries have **ZERO sales** in the last {days_filter} days!")
                 
-                display_df = dead_stock_df[[
+                show_cols = [c for c in [
                     "product", "gender", "art_no", "size", "quantity", 
                     "price", "locked_amount", "stock_added_date", "last_sold_date"
-                ]].rename(
-                    columns={
-                        "product": "Product",
-                        "gender": "Gender",
-                        "art_no": "Art No",
-                        "size": "Size",
-                        "quantity": "Quantity",
-                        "price": "Price (₹)",
-                        "locked_amount": "Locked Amount (₹)",
-                        "stock_added_date": "Stock Added Date 📦",
-                        "last_sold_date": "Last Sold Date 📅"
-                    }
-                )
+                ] if c in dead_stock_df.columns]
                 
                 st.dataframe(
-                    display_df,
+                    dead_stock_df[show_cols],
                     use_container_width=True,
                     hide_index=True
                 )
-                
-                st.info("💡 **Business Advice:** Put discount banners or 'Clearance Sale' offers on these Art Nos to recover locked capital quickly!")
             else:
-                st.success(f"🎉 Great job! No dead stock found for the last {days_filter} days. All items are moving well!")
+                st.success(f"🎉 Great job! No dead stock found for the last {days_filter} days.")
         else:
             st.info("No stock data available.")
     except Exception as e:
@@ -350,7 +335,6 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
         stock_df = pd.DataFrame()
 
     if not stock_df.empty:
-        # Stock search bar showing Gender clearly
         db_stock_options = [
             f"{row.get('product', '')} | Gender:{row.get('gender', 'N/A')} | Art:{row.get('art_no', '')} | Size:{row.get('size', '')} | MRP: ₹{row.get('price', 0)} | Stock:{row.get('quantity', 0)} pairs" 
             for _, row in stock_df.iterrows()
@@ -396,12 +380,16 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
             show_error_popup("Please enter or select Art No / Brand.")
         else:
             try:
-                # Match both Size and Gender strictly
-                stock_res = supabase.table("stock").select("*").eq("size", size).eq("gender", gender).execute()
+                # Stock Match
+                stock_res = supabase.table("stock").select("*").eq("size", size).execute()
                 matched_item = None
                 
                 if stock_res.data:
                     for item in stock_res.data:
+                        item_gender = str(item.get("gender", "")).lower()
+                        if item_gender and item_gender != gender.lower():
+                            continue
+
                         if (art_no.lower() in str(item.get("art_no", "")).lower()) or \
                            (art_no.lower() in str(item.get("product", "")).lower()) or \
                            (str(item.get("product", "")).lower() in art_no.lower()):
@@ -413,6 +401,7 @@ elif choice == "➕ Quick Sale Entry" and st.session_state["logged_in"]:
                 elif matched_item["quantity"] < qty:
                     show_error_popup(f"⚠️ Insufficient Stock!\n\nAvailable Stock: {matched_item['quantity']} pairs\nRequested Quantity: {qty} pairs")
                 else:
+                    # Insert sale record with gender
                     supabase.table("sales").insert({
                         "art_no": art_no, "gender": gender, "size": size, "quantity": qty, "price": price
                     }).execute()
@@ -482,7 +471,6 @@ elif choice == "📊 Sales Analytics":
             sdf = pd.DataFrame(sales_res.data)
             stdf = pd.DataFrame(stock_res.data) if stock_res.data else pd.DataFrame()
             
-            # Extract Stock details for Product Mapping
             art_to_product = {}
             if not stdf.empty:
                 for _, row in stdf.iterrows():
@@ -551,7 +539,12 @@ elif choice == "📊 Sales Analytics":
                 with st.form("edit_sale_form"):
                     st.markdown(f"**Editing Sale Record (ID: {selected_sale['id']})**")
                     edit_art = st.text_input("Art No / Brand", value=str(selected_sale["art_no"]))
-                    edit_gender = st.selectbox("Gender Category", ["Gents", "Ladies", "Kids"], index=["Gents", "Ladies", "Kids"].index(selected_sale.get("gender", "Gents")))
+                    
+                    default_gen_idx = 0
+                    if "gender" in selected_sale and selected_sale["gender"] in ["Gents", "Ladies", "Kids"]:
+                        default_gen_idx = ["Gents", "Ladies", "Kids"].index(selected_sale["gender"])
+                    
+                    edit_gender = st.selectbox("Gender Category", ["Gents", "Ladies", "Kids"], index=default_gen_idx)
                     edit_size = st.text_input("Size", value=str(selected_sale["size"]))
                     edit_qty = st.number_input("Quantity Sold", min_value=0, value=int(selected_sale["quantity"]), step=1)
                     edit_price = st.number_input("Price per Unit (₹)", min_value=0.0, value=float(selected_sale["price"]), step=10.0)
@@ -573,7 +566,7 @@ elif choice == "📊 Sales Analytics":
                         }).eq("id", selected_sale["id"]).execute()
                         
                         if qty_diff != 0:
-                            stock_item = supabase.table("stock").select("*").eq("size", edit_size).eq("gender", edit_gender).execute()
+                            stock_item = supabase.table("stock").select("*").eq("size", edit_size).execute()
                             if stock_item.data:
                                 matched = None
                                 for s in stock_item.data:
@@ -591,11 +584,10 @@ elif choice == "📊 Sales Analytics":
                         return_qty = int(selected_sale["quantity"])
                         sale_size = str(selected_sale["size"])
                         sale_art = str(selected_sale["art_no"])
-                        sale_gen = str(selected_sale.get("gender", "Gents"))
                         
                         supabase.table("sales").delete().eq("id", selected_sale["id"]).execute()
                         
-                        stock_item = supabase.table("stock").select("*").eq("size", sale_size).eq("gender", sale_gen).execute()
+                        stock_item = supabase.table("stock").select("*").eq("size", sale_size).execute()
                         if stock_item.data:
                             matched = None
                             for s in stock_item.data:
