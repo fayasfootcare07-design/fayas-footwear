@@ -92,7 +92,6 @@ if menu == "📦 Live Stock":
         if df_stock.empty:
             st.warning("No stock data found in Supabase database. Add stock via Manual Entry or AI Paper Scan!")
         else:
-            # Map possible column names safely
             prod_col = 'product_name' if 'product_name' in df_stock.columns else ('product' if 'product' in df_stock.columns else 'item_name')
             gender_col = 'gender' if 'gender' in df_stock.columns else 'category'
 
@@ -316,14 +315,13 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
         if st.button("🔴 Process Paper & Extract Stock Details"):
             with st.spinner("AI is scanning and parsing your stock photo..."):
                 try:
-                    # Multi-model Fallback List to ensure API model compatibility
-                    model_names = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-pro-vision']
-                    response = None
+                    # Direct Standard Release Gemini Model Call
+                    model = genai.GenerativeModel('gemini-2.5-flash')
                     
                     prompt = """
                     Extract the stock details from this paper image and return ONLY a valid JSON array.
                     Keys required for each item:
-                    - "product_name": String (e.g., Walkaroo, Paragon)
+                    - "product_name": String (e.g., Walkaroo, Paragon, VKC)
                     - "gender": String ("Gents", "Ladies", or "Kids")
                     - "art_no": String (e.g., W-102)
                     - "size": Integer or String (e.g., 7)
@@ -333,23 +331,16 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
                     Return RAW JSON ONLY. No markdown formatting, no backticks, no explanatory text.
                     """
 
-                    for m_name in model_names:
-                        try:
-                            model = genai.GenerativeModel(m_name)
-                            response = model.generate_content([prompt, image])
-                            if response and response.text:
-                                break
-                        except Exception:
-                            continue
-
+                    response = model.generate_content([prompt, image])
+                    
                     if not response or not response.text:
-                        raise Exception("Could not get response from Gemini vision models. Check API Key permissions.")
+                        st.error("No response from AI. Try uploading a clearer image.")
+                    else:
+                        clean_text = response.text.replace("```json", "").replace("```", "").strip()
+                        extracted_data = json.loads(clean_text)
 
-                    clean_text = response.text.replace("```json", "").replace("```", "").strip()
-                    extracted_data = json.loads(clean_text)
-
-                    st.session_state["extracted_stock_data"] = extracted_data
-                    st.success("Successfully extracted stock items!")
+                        st.session_state["extracted_stock_data"] = extracted_data
+                        st.success("Successfully extracted stock items!")
 
                 except Exception as e:
                     st.error(f"Failed to parse paper image: {e}")
