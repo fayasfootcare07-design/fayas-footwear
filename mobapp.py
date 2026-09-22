@@ -2,18 +2,20 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import qrcode
+import json
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import google.generativeai as genai
 
-# --- INDIA TIMEZONE (IST) SETUP WITHOUT PYTZ ---
+# --- INDIA TIMEZONE (IST) SETUP ---
 IST = ZoneInfo('Asia/Kolkata')
 
 # Page Config
 st.set_page_config(page_title="Fayas Footwear", page_icon="👞", layout="wide")
 
-# JavaScript to move focus on Enter Key press
+# JavaScript for focus handling
 enter_to_next_js = """
 <script>
 const doc = window.parent.document;
@@ -38,6 +40,11 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 from supabase import create_client, Client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Gemini AI Setup
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 # Session State Initializations
 if "logged_in" not in st.session_state:
@@ -71,7 +78,6 @@ def generate_fancy_bill_image(art_no, size, qty, price, total_amount, bill_no):
     draw.text((width // 2, 42), "FAYAS FOOTWEAR", fill="white", font=title_font, anchor="mm")
     draw.text((width // 2, 75), "PREMIUM FOOTWEAR COLLECTION • SINCE 2016", fill="#FFC107", font=subtitle_font, anchor="mm")
 
-    # Current Exact India Time (IST)
     current_time = datetime.now(IST).strftime("%d %b %Y, %I:%M %p")
     draw.text((30, 130), f"Invoice No : {bill_no}", fill="#333333", font=bold_font)
     draw.text((30, 155), f"Date         : {current_time}", fill="#666666", font=text_font)
@@ -152,7 +158,8 @@ if st.session_state["logged_in"]:
         "❄️ Dead Stock Finder", 
         "📊 Sales Analytics", 
         "➕ Quick Sale Entry", 
-        "📝 Stock Update / New Entry"
+        "📝 Stock Update / New Entry",
+        "📷 Paper Photo Stock Upload (AI Scan)"
     ]
 
 choice = st.sidebar.radio("Navigation", nav_options)
@@ -462,7 +469,66 @@ elif choice == "📝 Stock Update / New Entry" and st.session_state["logged_in"]
             except Exception as e:
                 show_error_popup(f"Failed to add stock: {e}")
 
-# --- 6. SALES ANALYTICS PAGE ---
+# --- 6. PAPER PHOTO STOCK UPLOAD (AI SCAN) ---
+elif choice == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["logged_in"]:
+    st.subheader("📷 Paper List Photo Upload (AI Auto-Scan)")
+    st.caption("Paper-la ezhudhiya sarakku details photo eduthu upload pannunga. AI auto-extract panni stock-la add pannidum!")
+
+    uploaded_file = st.file_uploader("Upload Paper Photo (JPG / PNG)", type=["jpg", "jpeg", "png"])
+
+    if uploaded_file is not None:
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Uploaded Paper Photo", width=350)
+        
+        if st.button("🤖 Process Paper & Extract Stock Details", type="primary"):
+            if not GEMINI_API_KEY:
+                st.error("⚠️ GEMINI_API_KEY is missing in Streamlit Secrets!")
+            else:
+                with st.spinner("AI photo-va padikidhu, irungu nanba... 🔍"):
+                    try:
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        prompt = """
+                        Extract footwear stock items from this handwritten or printed paper image into a strict JSON list format.
+                        Return ONLY JSON output, no extra markdown text.
+                        The JSON schema must be:
+                        [
+                          {
+                            "product": "Brand or Product Name (e.g. VKC, Paragon, Walkaroo)",
+                            "gender": "Gents / Ladies / Kids",
+                            "art_no": "Article Number or Model",
+                            "size": "Size string or number",
+                            "quantity": integer_quantity,
+                            "price": float_price
+                          }
+                        ]
+                        If gender is unknown, default to "Gents". If price is unknown, default to 0.0.
+                        """
+                        response = model.generate_content([prompt, image])
+                        clean_json = response.text.replace("```json", "").replace("```", "").strip()
+                        extracted_data = json.loads(clean_json)
+
+                        st.session_state["parsed_paper_stock"] = extracted_data
+                        st.success(f"✅ Extracted {len(extracted_data)} stock items successfully!")
+
+                    except Exception as e:
+                        st.error(f"Failed to parse paper image: {e}")
+
+    if "parsed_paper_stock" in st.session_state and st.session_state["parsed_paper_stock"]:
+        st.subheader("📋 Preview Extracted Stock Data")
+        parsed_df = pd.DataFrame(st.session_state["parsed_paper_stock"])
+        edited_df = st.data_editor(parsed_df, num_rows="dynamic", use_container_width=True)
+
+        if st.button("💾 Confirm & Save All Extracted Stock", type="primary"):
+            try:
+                records = edited_df.to_dict(orient="records")
+                supabase.table("stock").insert(records).execute()
+                st.success("🎉 All stocks from paper saved successfully to Supabase!")
+                del st.session_state["parsed_paper_stock"]
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error saving stocks: {e}")
+
+# --- 7. SALES ANALYTICS PAGE ---
 elif choice == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & History")
     try:
@@ -494,8 +560,6 @@ elif choice == "📊 Sales Analytics":
                 return "Footwear", art_str
 
             sdf[["product", "clean_art_no"]] = sdf["art_no"].apply(lambda x: pd.Series(extract_product_and_art(x)))
-            
-            # --- CONVERT UTC TIMESTAMP TO INDIA TIME (IST) USING ZONEINFO ---
             sdf["formatted_time"] = pd.to_datetime(sdf["created_at"], utc=True).dt.tz_convert(IST).dt.strftime("%d %b %Y, %I:%M %p")
             sdf["sno"] = range(1, len(sdf) + 1)
             sdf["total"] = sdf["quantity"] * sdf["price"]
