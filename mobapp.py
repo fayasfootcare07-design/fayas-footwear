@@ -90,25 +90,35 @@ if menu == "📦 Live Stock":
         df_stock = pd.DataFrame(response.data)
 
         if df_stock.empty:
-            st.warning("No stock data found in Supabase database.")
+            st.warning("No stock data found in Supabase database. Add stock via Manual Entry or AI Paper Scan!")
         else:
-            # Filters
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                gender_filter = st.multiselect("Gender Category", options=df_stock['gender'].unique(), default=df_stock['gender'].unique())
-            with col2:
-                brand_filter = st.multiselect("Brand / Product", options=df_stock['product_name'].unique(), default=df_stock['product_name'].unique())
-            with col3:
-                search_art = st.text_input("Search Art No", "")
+            # Map possible column names safely
+            prod_col = 'product_name' if 'product_name' in df_stock.columns else ('product' if 'product' in df_stock.columns else 'item_name')
+            gender_col = 'gender' if 'gender' in df_stock.columns else 'category'
 
-            filtered_df = df_stock[
-                (df_stock['gender'].isin(gender_filter)) &
-                (df_stock['product_name'].isin(brand_filter))
-            ]
-            if search_art:
-                filtered_df = filtered_df[filtered_df['art_no'].str.contains(search_art, case=False, na=False)]
+            if prod_col not in df_stock.columns:
+                st.write("Current Stock Data Structure:")
+                st.dataframe(df_stock, use_container_width=True)
+            else:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    gender_opts = df_stock[gender_col].unique() if gender_col in df_stock.columns else []
+                    gender_filter = st.multiselect("Gender Category", options=gender_opts, default=gender_opts)
+                with col2:
+                    brand_opts = df_stock[prod_col].unique()
+                    brand_filter = st.multiselect("Brand / Product", options=brand_opts, default=brand_opts)
+                with col3:
+                    search_art = st.text_input("Search Art No", "")
 
-            st.dataframe(filtered_df, use_container_width=True)
+                filtered_df = df_stock.copy()
+                if gender_col in df_stock.columns and gender_filter:
+                    filtered_df = filtered_df[filtered_df[gender_col].isin(gender_filter)]
+                if brand_filter:
+                    filtered_df = filtered_df[filtered_df[prod_col].isin(brand_filter)]
+                if search_art and 'art_no' in df_stock.columns:
+                    filtered_df = filtered_df[filtered_df['art_no'].astype(str).str.contains(search_art, case=False, na=False)]
+
+                st.dataframe(filtered_df, use_container_width=True)
 
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
@@ -125,9 +135,13 @@ elif menu == "🔥 Fast Selling Products":
         if df_sales.empty:
             st.info("No sales records available yet.")
         else:
-            fast_selling = df_sales.groupby(['product_name', 'gender', 'art_no', 'size'])['qty'].sum().reset_index()
-            fast_selling = fast_selling.sort_values(by='qty', ascending=False)
-            st.dataframe(fast_selling, use_container_width=True)
+            group_cols = [c for c in ['product_name', 'gender', 'art_no', 'size'] if c in df_sales.columns]
+            if group_cols:
+                fast_selling = df_sales.groupby(group_cols)['qty'].sum().reset_index()
+                fast_selling = fast_selling.sort_values(by='qty', ascending=False)
+                st.dataframe(fast_selling, use_container_width=True)
+            else:
+                st.dataframe(df_sales, use_container_width=True)
 
     except Exception as e:
         st.error(f"Error calculating fast-selling items: {e}")
@@ -173,7 +187,7 @@ elif menu == "⚠️ Dead Stock Finder" and st.session_state["admin_logged_in"]:
         if df_stock.empty:
             st.info("Stock inventory is empty.")
         else:
-            if not df_sales.empty:
+            if not df_sales.empty and 'art_no' in df_stock.columns and 'art_no' in df_sales.columns:
                 sold_items = df_sales[['product_name', 'gender', 'art_no', 'size']].drop_duplicates()
                 dead_stock = pd.merge(df_stock, sold_items, on=['product_name', 'gender', 'art_no', 'size'], how='left', indicator=True)
                 dead_stock = dead_stock[dead_stock['_merge'] == 'left_only'].drop(columns=['_merge'])
@@ -198,32 +212,34 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
         if df_stock.empty:
             st.error("No stock available to sell!")
         else:
+            prod_col = 'product_name' if 'product_name' in df_stock.columns else 'product'
             with st.form("sale_form"):
                 col1, col2 = st.columns(2)
                 with col1:
-                    product = st.selectbox("Product / Brand", df_stock['product_name'].unique())
-                    sub_stock = df_stock[df_stock['product_name'] == product]
-                    gender = st.selectbox("Gender", sub_stock['gender'].unique())
-                    sub_stock = sub_stock[sub_stock['gender'] == gender]
+                    product = st.selectbox("Product / Brand", df_stock[prod_col].unique())
+                    sub_stock = df_stock[df_stock[prod_col] == product]
+                    gender = st.selectbox("Gender", sub_stock['gender'].unique() if 'gender' in sub_stock.columns else ["Gents"])
+                    if 'gender' in sub_stock.columns:
+                        sub_stock = sub_stock[sub_stock['gender'] == gender]
                 
                 with col2:
-                    art_no = st.selectbox("Art No", sub_stock['art_no'].unique())
-                    sub_stock = sub_stock[sub_stock['art_no'] == art_no]
-                    size = st.selectbox("Size", sub_stock['size'].unique())
+                    art_no = st.selectbox("Art No", sub_stock['art_no'].unique() if 'art_no' in sub_stock.columns else ["N/A"])
+                    if 'art_no' in sub_stock.columns:
+                        sub_stock = sub_stock[sub_stock['art_no'] == art_no]
+                    size = st.selectbox("Size", sub_stock['size'].unique() if 'size' in sub_stock.columns else ["N/A"])
                     
-                selected_item = sub_stock[sub_stock['size'] == size].iloc[0]
-                available_qty = selected_item['qty']
-                item_price = selected_item['price']
+                selected_item = sub_stock.iloc[0]
+                available_qty = selected_item.get('qty', 0)
+                item_price = selected_item.get('price', 0.0)
 
                 st.info(f"Available Quantity: **{available_qty}** | Price per pair: **₹{item_price}**")
 
-                sell_qty = st.number_input("Sell Quantity", min_value=1, max_value=int(available_qty), value=1)
+                sell_qty = st.number_input("Sell Quantity", min_value=1, max_value=max(1, int(available_qty)), value=1)
                 submit_sale = st.form_submit_button("🧾 Complete Sale & Generate Receipt")
 
             if submit_sale:
                 current_ist = get_ist_time().isoformat()
                 
-                # 1. Insert Sales Record
                 supabase.table("sales").insert({
                     "product_name": product,
                     "gender": gender,
@@ -234,13 +250,11 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     "created_at": current_ist
                 }).execute()
 
-                # 2. Update Stock Quantity
-                new_qty = int(available_qty) - int(sell_qty)
+                new_qty = max(0, int(available_qty) - int(sell_qty))
                 supabase.table("stock").update({"qty": new_qty}).eq("id", selected_item['id']).execute()
 
                 st.success("Sale Recorded & Stock Deducted Successfully!")
 
-                # 3. Generate QR Code Receipt
                 bill_details = f"FAYAS FOOTWEAR\nDate: {get_ist_time().strftime('%d-%m-%Y %I:%M %p')}\nItem: {product} ({gender})\nArt: {art_no} | Size: {size}\nQty: {sell_qty} x ₹{item_price}\nTotal: ₹{sell_qty * item_price}"
                 qr_img = generate_qr_code(bill_details)
 
@@ -302,8 +316,10 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
         if st.button("🔴 Process Paper & Extract Stock Details"):
             with st.spinner("AI is scanning and parsing your stock photo..."):
                 try:
-                    # Updated Gemini Model for standard API release
-                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    # Multi-model Fallback List to ensure API model compatibility
+                    model_names = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-pro-vision']
+                    response = None
+                    
                     prompt = """
                     Extract the stock details from this paper image and return ONLY a valid JSON array.
                     Keys required for each item:
@@ -317,9 +333,18 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
                     Return RAW JSON ONLY. No markdown formatting, no backticks, no explanatory text.
                     """
 
-                    response = model.generate_content([prompt, image])
-                    
-                    # Clean response text Safely without Syntax Errors
+                    for m_name in model_names:
+                        try:
+                            model = genai.GenerativeModel(m_name)
+                            response = model.generate_content([prompt, image])
+                            if response and response.text:
+                                break
+                        except Exception:
+                            continue
+
+                    if not response or not response.text:
+                        raise Exception("Could not get response from Gemini vision models. Check API Key permissions.")
+
                     clean_text = response.text.replace("```json", "").replace("```", "").strip()
                     extracted_data = json.loads(clean_text)
 
@@ -329,7 +354,7 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
                 except Exception as e:
                     st.error(f"Failed to parse paper image: {e}")
 
-    # Display preview table and confirm button if data is present
+    # Preview & Confirm Section
     if "extracted_stock_data" in st.session_state and st.session_state["extracted_stock_data"]:
         df_extracted = pd.DataFrame(st.session_state["extracted_stock_data"])
         st.write("### Preview Extracted Data")
@@ -350,5 +375,6 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
                 st.balloons()
                 st.success("All items successfully imported into Supabase Stock!")
                 del st.session_state["extracted_stock_data"]
+                st.rerun()
             except Exception as e:
                 st.error(f"Failed to save stock to database: {e}")
