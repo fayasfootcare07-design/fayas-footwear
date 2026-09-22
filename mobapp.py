@@ -134,7 +134,7 @@ elif menu == "🔥 Fast Selling Products":
         if df_sales.empty:
             st.info("No sales records available yet.")
         else:
-            group_cols = [c for c in ['product_name', 'gender', 'art_no', 'size'] if c in df_sales.columns]
+            group_cols = [c for c in ['product_name', 'product', 'gender', 'art_no', 'size'] if c in df_sales.columns]
             if group_cols:
                 fast_selling = df_sales.groupby(group_cols)['qty'].sum().reset_index()
                 fast_selling = fast_selling.sort_values(by='qty', ascending=False)
@@ -186,9 +186,10 @@ elif menu == "⚠️ Dead Stock Finder" and st.session_state["admin_logged_in"]:
         if df_stock.empty:
             st.info("Stock inventory is empty.")
         else:
+            p_col = 'product_name' if 'product_name' in df_stock.columns else 'product'
             if not df_sales.empty and 'art_no' in df_stock.columns and 'art_no' in df_sales.columns:
-                sold_items = df_sales[['product_name', 'gender', 'art_no', 'size']].drop_duplicates()
-                dead_stock = pd.merge(df_stock, sold_items, on=['product_name', 'gender', 'art_no', 'size'], how='left', indicator=True)
+                sold_items = df_sales[[p_col, 'gender', 'art_no', 'size']].drop_duplicates()
+                dead_stock = pd.merge(df_stock, sold_items, on=[p_col, 'gender', 'art_no', 'size'], how='left', indicator=True)
                 dead_stock = dead_stock[dead_stock['_merge'] == 'left_only'].drop(columns=['_merge'])
             else:
                 dead_stock = df_stock
@@ -239,15 +240,17 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
             if submit_sale:
                 current_ist = get_ist_time().isoformat()
                 
-                supabase.table("sales").insert({
-                    "product_name": product,
+                sale_data = {
                     "gender": gender,
                     "art_no": art_no,
                     "size": str(size),
                     "qty": int(sell_qty),
                     "price": float(item_price),
                     "created_at": current_ist
-                }).execute()
+                }
+                sale_data[prod_col] = product
+
+                supabase.table("sales").insert(sale_data).execute()
 
                 new_qty = max(0, int(available_qty) - int(sell_qty))
                 supabase.table("stock").update({"qty": new_qty}).eq("id", selected_item['id']).execute()
@@ -287,14 +290,21 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.error("Please fill all fields!")
             else:
                 try:
-                    supabase.table("stock").insert({
-                        "product_name": product_name.strip(),
+                    # Dynamically detect column schema
+                    stock_res = supabase.table("stock").select("*").limit(1).execute()
+                    cols = list(stock_res.data[0].keys()) if stock_res.data else []
+                    prod_key = "product" if "product" in cols else "product_name"
+
+                    payload = {
                         "gender": gender,
                         "art_no": art_no.strip(),
                         "size": str(size).strip(),
                         "qty": int(qty),
                         "price": float(price)
-                    }).execute()
+                    }
+                    payload[prod_key] = product_name.strip()
+
+                    supabase.table("stock").insert(payload).execute()
                     st.success("Stock Added Successfully!")
                 except Exception as e:
                     st.error(f"Failed to add stock: {e}")
@@ -315,7 +325,6 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
         if st.button("🔴 Process Paper & Extract Stock Details"):
             with st.spinner("AI is scanning and parsing your stock photo..."):
                 try:
-                    # Model specified exactly as required by API error
                     model = genai.GenerativeModel('gemini-3.6-flash')
                     
                     prompt = """
@@ -353,15 +362,24 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
 
         if st.button("✅ Confirm & Add to Stock"):
             try:
+                # Check actual table schema from Supabase first
+                stock_check = supabase.table("stock").select("*").limit(1).execute()
+                sample_cols = list(stock_check.data[0].keys()) if stock_check.data else []
+                
+                # Determine correct brand column name
+                prod_key = "product" if "product" in sample_cols else "product_name"
+
                 for item in st.session_state["extracted_stock_data"]:
-                    supabase.table("stock").insert({
-                        "product_name": str(item.get("product_name", "")),
+                    row_data = {
                         "gender": str(item.get("gender", "Gents")),
                         "art_no": str(item.get("art_no", "")),
                         "size": str(item.get("size", "")),
                         "qty": int(item.get("qty", 0)),
                         "price": float(item.get("price", 0.0))
-                    }).execute()
+                    }
+                    row_data[prod_key] = str(item.get("product_name", item.get("product", "")))
+
+                    supabase.table("stock").insert(row_data).execute()
 
                 st.balloons()
                 st.success("All items successfully imported into Supabase Stock!")
