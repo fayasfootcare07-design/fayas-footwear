@@ -92,16 +92,16 @@ if menu == "📦 Live Stock":
         if df_stock.empty:
             st.warning("No stock data found in Supabase database. Add stock via Manual Entry or AI Paper Scan!")
         else:
-            prod_col = 'product_name' if 'product_name' in df_stock.columns else ('product' if 'product' in df_stock.columns else 'item_name')
-            gender_col = 'gender' if 'gender' in df_stock.columns else 'category'
+            prod_col = next((c for c in ['product_name', 'product', 'item_name'] if c in df_stock.columns), None)
+            gender_col = next((c for c in ['gender', 'category'] if c in df_stock.columns), None)
 
-            if prod_col not in df_stock.columns:
+            if not prod_col:
                 st.write("Current Stock Data Structure:")
                 st.dataframe(df_stock, use_container_width=True)
             else:
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    gender_opts = df_stock[gender_col].unique() if gender_col in df_stock.columns else []
+                    gender_opts = df_stock[gender_col].unique() if gender_col and gender_col in df_stock.columns else []
                     gender_filter = st.multiselect("Gender Category", options=gender_opts, default=gender_opts)
                 with col2:
                     brand_opts = df_stock[prod_col].unique()
@@ -110,7 +110,7 @@ if menu == "📦 Live Stock":
                     search_art = st.text_input("Search Art No", "")
 
                 filtered_df = df_stock.copy()
-                if gender_col in df_stock.columns and gender_filter:
+                if gender_col and gender_col in df_stock.columns and gender_filter:
                     filtered_df = filtered_df[filtered_df[gender_col].isin(gender_filter)]
                 if brand_filter:
                     filtered_df = filtered_df[filtered_df[prod_col].isin(brand_filter)]
@@ -134,10 +134,11 @@ elif menu == "🔥 Fast Selling Products":
         if df_sales.empty:
             st.info("No sales records available yet.")
         else:
+            qty_col = next((c for c in ['qty', 'quantity'] if c in df_sales.columns), 'qty')
             group_cols = [c for c in ['product_name', 'product', 'gender', 'art_no', 'size'] if c in df_sales.columns]
-            if group_cols:
-                fast_selling = df_sales.groupby(group_cols)['qty'].sum().reset_index()
-                fast_selling = fast_selling.sort_values(by='qty', ascending=False)
+            if group_cols and qty_col in df_sales.columns:
+                fast_selling = df_sales.groupby(group_cols)[qty_col].sum().reset_index()
+                fast_selling = fast_selling.sort_values(by=qty_col, ascending=False)
                 st.dataframe(fast_selling, use_container_width=True)
             else:
                 st.dataframe(df_sales, use_container_width=True)
@@ -157,8 +158,9 @@ elif menu == "📊 Sales Analytics":
         if df_sales.empty:
             st.info("No sales data recorded yet.")
         else:
-            df_sales['revenue'] = df_sales['qty'] * df_sales['price']
-            total_qty = df_sales['qty'].sum()
+            qty_col = next((c for c in ['qty', 'quantity'] if c in df_sales.columns), 'qty')
+            df_sales['revenue'] = df_sales[qty_col] * df_sales['price']
+            total_qty = df_sales[qty_col].sum()
             total_rev = df_sales['revenue'].sum()
 
             m1, m2 = st.columns(2)
@@ -186,7 +188,7 @@ elif menu == "⚠️ Dead Stock Finder" and st.session_state["admin_logged_in"]:
         if df_stock.empty:
             st.info("Stock inventory is empty.")
         else:
-            p_col = 'product_name' if 'product_name' in df_stock.columns else 'product'
+            p_col = next((c for c in ['product_name', 'product'] if c in df_stock.columns), 'product')
             if not df_sales.empty and 'art_no' in df_stock.columns and 'art_no' in df_sales.columns:
                 sold_items = df_sales[[p_col, 'gender', 'art_no', 'size']].drop_duplicates()
                 dead_stock = pd.merge(df_stock, sold_items, on=[p_col, 'gender', 'art_no', 'size'], how='left', indicator=True)
@@ -212,7 +214,9 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
         if df_stock.empty:
             st.error("No stock available to sell!")
         else:
-            prod_col = 'product_name' if 'product_name' in df_stock.columns else 'product'
+            prod_col = next((c for c in ['product_name', 'product'] if c in df_stock.columns), 'product')
+            qty_col = next((c for c in ['qty', 'quantity'] if c in df_stock.columns), 'qty')
+
             with st.form("sale_form"):
                 col1, col2 = st.columns(2)
                 with col1:
@@ -229,7 +233,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     size = st.selectbox("Size", sub_stock['size'].unique() if 'size' in sub_stock.columns else ["N/A"])
                     
                 selected_item = sub_stock.iloc[0]
-                available_qty = selected_item.get('qty', 0)
+                available_qty = selected_item.get(qty_col, 0)
                 item_price = selected_item.get('price', 0.0)
 
                 st.info(f"Available Quantity: **{available_qty}** | Price per pair: **₹{item_price}**")
@@ -239,21 +243,26 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
 
             if submit_sale:
                 current_ist = get_ist_time().isoformat()
+
+                sale_res = supabase.table("sales").select("*").limit(1).execute()
+                s_cols = list(sale_res.data[0].keys()) if sale_res.data else []
+                s_qty_key = "quantity" if "quantity" in s_cols else "qty"
+                s_prod_key = "product" if "product" in s_cols else "product_name"
                 
                 sale_data = {
                     "gender": gender,
                     "art_no": art_no,
                     "size": str(size),
-                    "qty": int(sell_qty),
                     "price": float(item_price),
                     "created_at": current_ist
                 }
-                sale_data[prod_col] = product
+                sale_data[s_qty_key] = int(sell_qty)
+                sale_data[s_prod_key] = product
 
                 supabase.table("sales").insert(sale_data).execute()
 
                 new_qty = max(0, int(available_qty) - int(sell_qty))
-                supabase.table("stock").update({"qty": new_qty}).eq("id", selected_item['id']).execute()
+                supabase.table("stock").update({qty_col: new_qty}).eq("id", selected_item['id']).execute()
 
                 st.success("Sale Recorded & Stock Deducted Successfully!")
 
@@ -290,19 +299,19 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.error("Please fill all fields!")
             else:
                 try:
-                    # Dynamically detect column schema
                     stock_res = supabase.table("stock").select("*").limit(1).execute()
                     cols = list(stock_res.data[0].keys()) if stock_res.data else []
                     prod_key = "product" if "product" in cols else "product_name"
+                    qty_key = "quantity" if "quantity" in cols else "qty"
 
                     payload = {
                         "gender": gender,
                         "art_no": art_no.strip(),
                         "size": str(size).strip(),
-                        "qty": int(qty),
                         "price": float(price)
                     }
                     payload[prod_key] = product_name.strip()
+                    payload[qty_key] = int(qty)
 
                     supabase.table("stock").insert(payload).execute()
                     st.success("Stock Added Successfully!")
@@ -362,22 +371,22 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
 
         if st.button("✅ Confirm & Add to Stock"):
             try:
-                # Check actual table schema from Supabase first
+                # Dynamically fetch Supabase stock table column names
                 stock_check = supabase.table("stock").select("*").limit(1).execute()
                 sample_cols = list(stock_check.data[0].keys()) if stock_check.data else []
                 
-                # Determine correct brand column name
                 prod_key = "product" if "product" in sample_cols else "product_name"
+                qty_key = "quantity" if "quantity" in sample_cols else "qty"
 
                 for item in st.session_state["extracted_stock_data"]:
                     row_data = {
                         "gender": str(item.get("gender", "Gents")),
                         "art_no": str(item.get("art_no", "")),
                         "size": str(item.get("size", "")),
-                        "qty": int(item.get("qty", 0)),
                         "price": float(item.get("price", 0.0))
                     }
                     row_data[prod_key] = str(item.get("product_name", item.get("product", "")))
+                    row_data[qty_key] = int(item.get("qty", item.get("quantity", 0)))
 
                     supabase.table("stock").insert(row_data).execute()
 
