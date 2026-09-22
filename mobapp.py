@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import qrcode
 from io import BytesIO
@@ -72,6 +72,7 @@ menu_options = ["📦 Live Stock", "🔥 Fast Selling Products", "📊 Sales Ana
 
 if st.session_state["admin_logged_in"]:
     menu_options.extend([
+        "🔮 AI Future Sales Prediction",
         "⚠️ Dead Stock Finder",
         "➕ Quick Sale Entry",
         "📝 Stock Update / New Entry",
@@ -147,7 +148,7 @@ elif menu == "🔥 Fast Selling Products":
         st.error(f"Error calculating fast-selling items: {e}")
 
 # ---------------------------------------------------------
-# 3. SALES ANALYTICS
+# 3. SALES ANALYTICS (UPDATED DATE & TIME FORMAT)
 # ---------------------------------------------------------
 elif menu == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & Revenue")
@@ -167,14 +168,71 @@ elif menu == "📊 Sales Analytics":
             m1.metric("Total Pair Sales", f"{total_qty} Pairs")
             m2.metric("Total Revenue", f"₹{total_rev:,.2f}")
 
+            # --- INDIAN DATE & TIME FORMATTING (DD/Mon/YY hh:mm AM/PM) ---
+            if 'created_at' in df_sales.columns:
+                df_sales['created_at'] = pd.to_datetime(df_sales['created_at']).dt.tz_convert('Asia/Kolkata')
+                df_sales['created_at'] = df_sales['created_at'].dt.strftime('%d/%b/%y %I:%M %p')
+
             st.write("### Recent Transactions")
-            st.dataframe(df_sales.sort_values(by='created_at', ascending=False), use_container_width=True)
+            st.dataframe(df_sales.sort_values(by='id', ascending=False), use_container_width=True)
 
     except Exception as e:
         st.error(f"Error loading analytics: {e}")
 
 # ---------------------------------------------------------
-# 4. DEAD STOCK FINDER (ADMIN ONLY)
+# 4. AI FUTURE SALES PREDICTION
+# ---------------------------------------------------------
+elif menu == "🔮 AI Future Sales Prediction" and st.session_state["admin_logged_in"]:
+    st.subheader("🔮 AI Sales Forecasting & Demand Prediction")
+    st.write("Gemini AI analysis based on past sales history, current stock, and upcoming dates/weeks.")
+
+    try:
+        stock_res = supabase.table("stock").select("*").execute()
+        sales_res = supabase.table("sales").select("*").execute()
+
+        df_stock = pd.DataFrame(stock_res.data)
+        df_sales = pd.DataFrame(sales_res.data)
+
+        if st.button("🚀 Generate AI Prediction Report"):
+            with st.spinner("Gemini AI is analyzing past sales trends and predicting future demand..."):
+                try:
+                    today_str = get_ist_time().strftime("%Y-%m-%d (%A)")
+                    stock_summary = df_stock.to_json(orient="records") if not df_stock.empty else "No current stock"
+                    sales_summary = df_sales.to_json(orient="records") if not df_sales.empty else "No past sales"
+
+                    prompt = f"""
+                    You are an expert AI Retail Inventory Analyst for 'Fayas Footwear'.
+                    Today's Date: {today_str}
+
+                    Current Stock Inventory:
+                    {stock_summary}
+
+                    Past Sales History:
+                    {sales_summary}
+
+                    Based on this data, provide a comprehensive, actionable prediction report in Tamil-English (Tanglish) or clear English with the following sections:
+                    1. 📈 **Predicted Top Sellers for Next 7-14 Days** (Which brands, sizes, art numbers will sell most)
+                    2. ⚠️ **Urgent Reorder Alerts** (Products whose stock is dangerously low and predicted to run out soon)
+                    3. 💡 **Smart Business Advice / Demand Strategy** (Tips to clear dead stock or maximize revenue for upcoming dates)
+
+                    Keep the response clear, structured, and easy to read for the store owner.
+                    """
+
+                    model = genai.GenerativeModel('gemini-3.6-flash')
+                    response = model.generate_content(prompt)
+
+                    st.markdown("---")
+                    st.markdown("### 📊 AI Forecast & Stock Insights")
+                    st.markdown(response.text)
+
+                except Exception as ex:
+                    st.error(f"AI Prediction error: {ex}")
+
+    except Exception as e:
+        st.error(f"Error fetching data for prediction: {e}")
+
+# ---------------------------------------------------------
+# 5. DEAD STOCK FINDER (ADMIN ONLY)
 # ---------------------------------------------------------
 elif menu == "⚠️ Dead Stock Finder" and st.session_state["admin_logged_in"]:
     st.subheader("⚠️ Low or Zero Selling Stock")
@@ -203,7 +261,7 @@ elif menu == "⚠️ Dead Stock Finder" and st.session_state["admin_logged_in"]:
         st.error(f"Error computing dead stock: {e}")
 
 # ---------------------------------------------------------
-# 5. QUICK SALE ENTRY (ADMIN ONLY)
+# 6. QUICK SALE ENTRY (ADMIN ONLY)
 # ---------------------------------------------------------
 elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
     st.subheader("➕ Quick Sale Entry & Bill Generator")
@@ -277,7 +335,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
         st.error(f"Error completing sale: {e}")
 
 # ---------------------------------------------------------
-# 6. STOCK UPDATE / NEW ENTRY (ADMIN ONLY)
+# 7. STOCK UPDATE / NEW ENTRY (ADMIN ONLY)
 # ---------------------------------------------------------
 elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_in"]:
     st.subheader("📝 Manual Stock Entry / Add New Items")
@@ -319,7 +377,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     st.error(f"Failed to add stock: {e}")
 
 # ---------------------------------------------------------
-# 7. PAPER PHOTO STOCK UPLOAD (AI SCAN - ADMIN ONLY)
+# 8. PAPER PHOTO STOCK UPLOAD (AI SCAN - ADMIN ONLY)
 # ---------------------------------------------------------
 elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["admin_logged_in"]:
     st.subheader("📷 Paper Photo Stock Upload (AI Scan)")
@@ -371,7 +429,6 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
 
         if st.button("✅ Confirm & Add to Stock"):
             try:
-                # Dynamically fetch Supabase stock table column names
                 stock_check = supabase.table("stock").select("*").limit(1).execute()
                 sample_cols = list(stock_check.data[0].keys()) if stock_check.data else []
                 
