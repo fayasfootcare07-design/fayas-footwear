@@ -315,8 +315,8 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
         if st.button("🔴 Process Paper & Extract Stock Details"):
             with st.spinner("AI is scanning and parsing your stock photo..."):
                 try:
-                    # Direct Standard Release Gemini Model Call
-                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    # Model specified exactly as required by API error
+                    model = genai.GenerativeModel('gemini-3.6-flash')
                     
                     prompt = """
                     Extract the stock details from this paper image and return ONLY a valid JSON array.
@@ -334,7 +334,7 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
                     response = model.generate_content([prompt, image])
                     
                     if not response or not response.text:
-                        st.error("No response from AI. Try uploading a clearer image.")
+                        st.error("No text returned from AI. Try uploading a clearer image.")
                     else:
                         clean_text = response.text.replace("```json", "").replace("```", "").strip()
                         extracted_data = json.loads(clean_text)
