@@ -60,8 +60,44 @@ def format_df_dates(df):
     return df
 
 
-# --- HEADER & BRANDING ---
-st.title("👞 FAYAS FOOTWEAR")
+# --- HEADER WITH PLAYFUL ANIMATED CAT ---
+st.markdown(
+    """
+    <style>
+    @keyframes playCat {
+        0%   { transform: translateY(0px) rotate(0deg); }
+        25%  { transform: translateY(-12px) rotate(-8deg); }
+        50%  { transform: translateY(0px) rotate(0deg); }
+        75%  { transform: translateY(-18px) rotate(8deg); }
+        100% { transform: translateY(0px) rotate(0deg); }
+    }
+    .header-container {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 5px;
+    }
+    .header-title {
+        font-size: 2.3rem;
+        font-weight: 800;
+        color: #1E1E1E;
+        margin: 0;
+        line-height: 1;
+    }
+    .playful-cat {
+        font-size: 2.5rem;
+        display: inline-block;
+        animation: playCat 1.5s infinite ease-in-out;
+        cursor: pointer;
+    }
+    </style>
+    <div class="header-container">
+        <span class="playful-cat">🐱</span>
+        <h1 class="header-title">FAYAS FOOTWEAR</h1>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 st.caption("Live Cloud Inventory & Sales Dashboard (IST Real-Time Sync)")
 
 # --- ACCESS CONTROL / SIDEBAR LOGIN ---
