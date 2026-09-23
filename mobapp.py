@@ -144,7 +144,6 @@ if menu == "📦 Live Stock":
                         if gender_col and gender_col in df_stock.columns
                         else []
                     )
-                    # DEFAULT EMPTY
                     gender_filter = st.multiselect(
                         "Gender Category",
                         options=gender_opts,
@@ -153,7 +152,6 @@ if menu == "📦 Live Stock":
                     )
                 with col2:
                     brand_opts = df_stock[prod_col].unique()
-                    # DEFAULT EMPTY
                     brand_filter = st.multiselect(
                         "Brand / Product",
                         options=brand_opts,
@@ -326,13 +324,15 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
                 st.info("Stock inventory is empty.")
             else:
                 df_stock = format_df_dates(df_stock)
-                p_col = next(
-                    (
-                        c
-                        for c in ["product_name", "product"]
-                        if c in df_stock.columns
-                    ),
+                
+                # Dynamic product column detection for stock & sales
+                stock_prod_col = next(
+                    (c for c in ["product_name", "product"] if c in df_stock.columns),
                     "product",
+                )
+                sales_prod_col = next(
+                    (c for c in ["product_name", "product"] if c in df_sales.columns),
+                    stock_prod_col if not df_sales.empty else "product",
                 )
 
                 if (
@@ -340,13 +340,16 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
                     and "art_no" in df_stock.columns
                     and "art_no" in df_sales.columns
                 ):
-                    sold_items = df_sales[
-                        [p_col, "gender", "art_no", "size"]
-                    ].drop_duplicates()
+                    # Align column names before merging
+                    df_sales_temp = df_sales.rename(columns={sales_prod_col: stock_prod_col})
+                    
+                    merge_cols = [c for c in [stock_prod_col, "gender", "art_no", "size"] if c in df_stock.columns and c in df_sales_temp.columns]
+                    
+                    sold_items = df_sales_temp[merge_cols].drop_duplicates()
                     dead_stock = pd.merge(
                         df_stock,
                         sold_items,
-                        on=[p_col, "gender", "art_no", "size"],
+                        on=merge_cols,
                         how="left",
                         indicator=True,
                     )
@@ -357,8 +360,7 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
                     dead_stock = df_stock
 
                 st.warning(
-                    f"Found {len(dead_stock)} stock items with zero sales"
-                    " record:"
+                    f"Found {len(dead_stock)} stock items with zero sales record:"
                 )
                 st.dataframe(dead_stock, use_container_width=True)
         except Exception as e:
