@@ -154,7 +154,7 @@ if menu == "📦 Live Stock":
                     use_container_width=True
                 )
 
-                if st.button("💾 Save Changes to Database", type="primary"):
+                if st.button("💾 Save Changes", type="primary"):
                     try:
                         # Database update logic
                         for index, row in edited_df.iterrows():
