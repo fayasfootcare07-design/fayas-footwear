@@ -42,6 +42,24 @@ def generate_qr_code(data_str):
     img.save(buf, format="PNG")
     return buf.getvalue()
 
+def format_df_dates(df):
+    """
+    Standardizes all date/time columns in any dataframe to IST format: 21/Sep/26 02:09 PM
+    """
+    if df.empty:
+        return df
+    for col in df.columns:
+        if 'created_at' in col or 'date' in col or 'time' in col or 'updated_at' in col:
+            try:
+                df[col] = pd.to_datetime(df[col]).dt.tz_convert('Asia/Kolkata')
+                df[col] = df[col].dt.strftime('%d/%b/%y %I:%M %p')
+            except Exception:
+                try:
+                    df[col] = pd.to_datetime(df[col]).dt.strftime('%d/%b/%y %I:%M %p')
+                except Exception:
+                    pass
+    return df
+
 # --- HEADER & BRANDING ---
 st.title("👞 FAYAS FOOTWEAR")
 st.caption("Live Cloud Inventory & Sales Dashboard (IST Real-Time Sync)")
@@ -93,6 +111,7 @@ if menu == "📦 Live Stock":
         if df_stock.empty:
             st.warning("No stock data found in Supabase database. Add stock via Manual Entry or AI Paper Scan!")
         else:
+            df_stock = format_df_dates(df_stock)
             prod_col = next((c for c in ['product_name', 'product', 'item_name'] if c in df_stock.columns), None)
             gender_col = next((c for c in ['gender', 'category'] if c in df_stock.columns), None)
 
@@ -135,6 +154,7 @@ elif menu == "🔥 Fast Selling Products":
         if df_sales.empty:
             st.info("No sales records available yet.")
         else:
+            df_sales = format_df_dates(df_sales)
             qty_col = next((c for c in ['qty', 'quantity'] if c in df_sales.columns), 'qty')
             group_cols = [c for c in ['product_name', 'product', 'gender', 'art_no', 'size'] if c in df_sales.columns]
             if group_cols and qty_col in df_sales.columns:
@@ -148,7 +168,7 @@ elif menu == "🔥 Fast Selling Products":
         st.error(f"Error calculating fast-selling items: {e}")
 
 # ---------------------------------------------------------
-# 3. SALES ANALYTICS (UPDATED DATE & TIME FORMAT)
+# 3. SALES ANALYTICS
 # ---------------------------------------------------------
 elif menu == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & Revenue")
@@ -168,10 +188,8 @@ elif menu == "📊 Sales Analytics":
             m1.metric("Total Pair Sales", f"{total_qty} Pairs")
             m2.metric("Total Revenue", f"₹{total_rev:,.2f}")
 
-            # --- INDIAN DATE & TIME FORMATTING (DD/Mon/YY hh:mm AM/PM) ---
-            if 'created_at' in df_sales.columns:
-                df_sales['created_at'] = pd.to_datetime(df_sales['created_at']).dt.tz_convert('Asia/Kolkata')
-                df_sales['created_at'] = df_sales['created_at'].dt.strftime('%d/%b/%y %I:%M %p')
+            # Apply IST Date Formatting to all date/time columns
+            df_sales = format_df_dates(df_sales)
 
             st.write("### Recent Transactions")
             st.dataframe(df_sales.sort_values(by='id', ascending=False), use_container_width=True)
@@ -196,13 +214,13 @@ elif menu == "🔮 AI Future Sales Prediction" and st.session_state["admin_logge
         if st.button("🚀 Generate AI Prediction Report"):
             with st.spinner("Gemini AI is analyzing past sales trends and predicting future demand..."):
                 try:
-                    today_str = get_ist_time().strftime("%Y-%m-%d (%A)")
+                    today_str = get_ist_time().strftime("%d/%b/%y %I:%M %p")
                     stock_summary = df_stock.to_json(orient="records") if not df_stock.empty else "No current stock"
                     sales_summary = df_sales.to_json(orient="records") if not df_sales.empty else "No past sales"
 
                     prompt = f"""
                     You are an expert AI Retail Inventory Analyst for 'Fayas Footwear'.
-                    Today's Date: {today_str}
+                    Today's Date & Time: {today_str}
 
                     Current Stock Inventory:
                     {stock_summary}
@@ -246,6 +264,7 @@ elif menu == "⚠️ Dead Stock Finder" and st.session_state["admin_logged_in"]:
         if df_stock.empty:
             st.info("Stock inventory is empty.")
         else:
+            df_stock = format_df_dates(df_stock)
             p_col = next((c for c in ['product_name', 'product'] if c in df_stock.columns), 'product')
             if not df_sales.empty and 'art_no' in df_stock.columns and 'art_no' in df_sales.columns:
                 sold_items = df_sales[[p_col, 'gender', 'art_no', 'size']].drop_duplicates()
@@ -324,7 +343,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
 
                 st.success("Sale Recorded & Stock Deducted Successfully!")
 
-                bill_details = f"FAYAS FOOTWEAR\nDate: {get_ist_time().strftime('%d-%m-%Y %I:%M %p')}\nItem: {product} ({gender})\nArt: {art_no} | Size: {size}\nQty: {sell_qty} x ₹{item_price}\nTotal: ₹{sell_qty * item_price}"
+                bill_details = f"FAYAS FOOTWEAR\nDate: {get_ist_time().strftime('%d/%b/%y %I:%M %p')}\nItem: {product} ({gender})\nArt: {art_no} | Size: {size}\nQty: {sell_qty} x ₹{item_price}\nTotal: ₹{sell_qty * item_price}"
                 qr_img = generate_qr_code(bill_details)
 
                 st.write("### 🧾 Digital Receipt")
@@ -366,7 +385,8 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         "gender": gender,
                         "art_no": art_no.strip(),
                         "size": str(size).strip(),
-                        "price": float(price)
+                        "price": float(price),
+                        "created_at": get_ist_time().isoformat()
                     }
                     payload[prod_key] = product_name.strip()
                     payload[qty_key] = int(qty)
@@ -440,7 +460,8 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
                         "gender": str(item.get("gender", "Gents")),
                         "art_no": str(item.get("art_no", "")),
                         "size": str(item.get("size", "")),
-                        "price": float(item.get("price", 0.0))
+                        "price": float(item.get("price", 0.0)),
+                        "created_at": get_ist_time().isoformat()
                     }
                     row_data[prod_key] = str(item.get("product_name", item.get("product", "")))
                     row_data[qty_key] = int(item.get("qty", item.get("quantity", 0)))
