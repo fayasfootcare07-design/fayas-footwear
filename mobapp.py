@@ -396,7 +396,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         (
                             sub_stock["gender"].unique()
                             if "gender" in sub_stock.columns
-                            else ["Gents"]
+                            else ["Gents", "Ladies", "Kids (B)", "Kids (G)"]
                         ),
                     )
                     if "gender" in sub_stock.columns:
@@ -510,7 +510,9 @@ elif (
             product_name = st.text_input(
                 "Brand / Product Name (e.g., Walkaroo)"
             )
-            gender = st.selectbox("Gender", ["Gents", "Ladies", "Kids"])
+            gender = st.selectbox(
+                "Gender", ["Gents", "Ladies", "Kids (B)", "Kids (G)"]
+            )
             art_no = st.text_input("Art No (e.g., W-102)")
         with col2:
             size = st.text_input("Size (e.g., 7 or 8)")
