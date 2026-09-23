@@ -89,7 +89,7 @@ st.sidebar.title("Navigation")
 menu_options = [
     "📦 Live Stock",
     "📊 Sales Analytics",
-    "🎯 Product Insights (Fast & Dead Stock)",
+    "🎯 Product Insights (Fast, Low & Dead Stock)",
 ]
 
 if st.session_state["admin_logged_in"]:
@@ -144,7 +144,6 @@ if menu == "📦 Live Stock":
 
             # ADMIN ONLY EDITABLE TABLE
             if st.session_state.get("admin_logged_in", False):
-                # Custom 'Select' column for deleting items
                 filtered_df.insert(0, "Select", False)
 
                 edited_df = st.data_editor(
@@ -160,7 +159,6 @@ if menu == "📦 Live Stock":
                 with col_b1:
                     if st.button("💾 Save Changes", type="primary"):
                         try:
-                            # Database update logic
                             for index, row in edited_df.iterrows():
                                 row_id = row.get("id")
                                 if pd.notnull(row_id):
@@ -180,7 +178,6 @@ if menu == "📦 Live Stock":
 
                 with col_b2:
                     if st.button("🗑️ Delete Selected Items", type="secondary"):
-                        # Select rows where 'Select' column is checked (True)
                         to_delete_df = edited_df[edited_df["Select"] == True]
 
                         if to_delete_df.empty:
@@ -198,7 +195,6 @@ if menu == "📦 Live Stock":
                             except Exception as delete_err:
                                 st.error(f"Error deleting items: {delete_err}")
             else:
-                # VIEW ONLY FOR NORMAL USERS
                 formatted_view = format_df_dates(filtered_df)
                 st.dataframe(formatted_view, use_container_width=True)
 
@@ -261,12 +257,16 @@ elif menu == "📊 Sales Analytics":
         st.error(f"Error loading analytics: {e}")
 
 # ---------------------------------------------------------
-# 3. PRODUCT INSIGHTS (FAST & DEAD STOCK)
+# 3. PRODUCT INSIGHTS (FAST, LOW & DEAD STOCK)
 # ---------------------------------------------------------
-elif menu == "🎯 Product Insights (Fast & Dead Stock)":
+elif menu == "🎯 Product Insights (Fast, Low & Dead Stock)":
     st.subheader("🎯 Product Insights")
 
-    tab1, tab2 = st.tabs(["🔥 Top / Fast Selling Products", "⚠️ Dead Stock (Zero Sales)"])
+    tab1, tab2, tab3 = st.tabs([
+        "🔥 Top / Fast Selling Products",
+        "⚠️ Dead Stock (Zero Sales)",
+        "📉 Low Stock Alert (≤ 2 Pairs)"
+    ])
 
     # TAB 1: Fast Selling
     with tab1:
@@ -316,6 +316,27 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
                 st.dataframe(dead_stock, use_container_width=True)
         except Exception as e:
             st.error(f"Error loading dead stock: {e}")
+
+    # TAB 3: Low Stock Alert (≤ 2 Pairs)
+    with tab3:
+        try:
+            stock_res = supabase.table("stock").select("*").execute()
+            df_stock = pd.DataFrame(stock_res.data)
+
+            if df_stock.empty:
+                st.info("Stock inventory is empty.")
+            else:
+                # Filter items where quantity is 2 or less (including 1)
+                low_stock = df_stock[df_stock["qty"] <= 2].sort_values(by="qty", ascending=True)
+
+                if low_stock.empty:
+                    st.success("🎉 All items have sufficient stock (more than 2 pairs)!")
+                else:
+                    st.error(f"🚨 Found {len(low_stock)} items with low stock (2 pairs or less):")
+                    low_stock_formatted = format_df_dates(low_stock)
+                    st.dataframe(low_stock_formatted, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error loading low stock: {e}")
 
 # ---------------------------------------------------------
 # 4. QUICK SALE ENTRY
