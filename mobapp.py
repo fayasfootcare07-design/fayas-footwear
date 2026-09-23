@@ -363,9 +363,8 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
                 st.dataframe(dead_stock, use_container_width=True)
         except Exception as e:
             st.error(f"Error loading dead stock: {e}")
-
 # ---------------------------------------------------------
-# 4. QUICK SALE ENTRY (ONE BY ONE & EMPTY BY DEFAULT)
+# 4. QUICK SALE ENTRY (GRID LAYOUT - EVERYTHING VISIBLE & EMPTY DEFAULT)
 # ---------------------------------------------------------
 elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
     st.subheader("➕ Quick Sale Entry & Bill Generator")
@@ -384,52 +383,68 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 (c for c in ["qty", "quantity"] if c in df_stock.columns), "qty"
             )
 
+            # 2 Columns Layout for Inputs
+            col_a, col_b = st.columns(2)
+
             # Step 1: Product Selection
-            products_list = list(df_stock[prod_col].unique())
-            selected_product = st.selectbox(
-                "1. Select Product / Brand",
-                options=products_list,
-                index=None,
-                placeholder="Choose Brand...",
-            )
+            with col_a:
+                products_list = list(df_stock[prod_col].unique())
+                selected_product = st.selectbox(
+                    "Product / Brand",
+                    options=products_list,
+                    index=None,
+                    placeholder="Choose Brand...",
+                )
 
             # Step 2: Gender Selection (Filtered by Product)
-            selected_gender = None
+            gender_list = []
             if selected_product:
                 sub_stock_1 = df_stock[df_stock[prod_col] == selected_product]
-                gender_list = list(sub_stock_1["gender"].unique()) if "gender" in sub_stock_1.columns else []
+                if "gender" in sub_stock_1.columns:
+                    gender_list = list(sub_stock_1["gender"].unique())
+
+            with col_b:
                 selected_gender = st.selectbox(
-                    "2. Select Gender",
+                    "Gender",
                     options=gender_list,
                     index=None,
                     placeholder="Choose Gender...",
+                    disabled=not bool(selected_product)
                 )
 
             # Step 3: Art No Selection (Filtered by Product & Gender)
-            selected_art_no = None
+            art_list = []
             if selected_product and selected_gender:
                 sub_stock_2 = sub_stock_1[sub_stock_1["gender"] == selected_gender] if "gender" in sub_stock_1.columns else sub_stock_1
-                art_list = list(sub_stock_2["art_no"].unique()) if "art_no" in sub_stock_2.columns else []
+                if "art_no" in sub_stock_2.columns:
+                    art_list = list(sub_stock_2["art_no"].unique())
+
+            with col_a:
                 selected_art_no = st.selectbox(
-                    "3. Select Art No",
+                    "Art No",
                     options=art_list,
                     index=None,
                     placeholder="Choose Art No...",
+                    disabled=not bool(selected_gender)
                 )
 
             # Step 4: Size Selection (Filtered by Product, Gender & Art No)
-            selected_size = None
+            size_list = []
             if selected_product and selected_gender and selected_art_no:
                 sub_stock_3 = sub_stock_2[sub_stock_2["art_no"] == selected_art_no] if "art_no" in sub_stock_2.columns else sub_stock_2
-                size_list = list(sub_stock_3["size"].unique()) if "size" in sub_stock_3.columns else []
+                if "size" in sub_stock_3.columns:
+                    size_list = list(sub_stock_3["size"].unique())
+
+            with col_b:
                 selected_size = st.selectbox(
-                    "4. Select Size",
+                    "Size",
                     options=size_list,
                     index=None,
                     placeholder="Choose Size...",
+                    disabled=not bool(selected_art_no)
                 )
 
-            # Show details & Sale Form only when ALL options are selected
+            # Show Stock Info & Form once ALL 4 are selected
             if selected_product and selected_gender and selected_art_no and selected_size:
                 matched_rows = sub_stock_3[sub_stock_3["size"] == selected_size]
                 if not matched_rows.empty:
