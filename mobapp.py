@@ -620,7 +620,8 @@ elif (
         if st.button("🔴 Process Paper & Extract Stock Details"):
             with st.spinner("AI is scanning and parsing your stock photo..."):
                 try:
-                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    # Updated model to fix 404 API error
+                    model = genai.GenerativeModel("gemini-2.5-flash")
 
                     prompt = """
                     Extract the stock details from this paper image and return ONLY a valid JSON array.
