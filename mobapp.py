@@ -103,7 +103,7 @@ menu = st.sidebar.radio("Go to", menu_options)
 # ---------------------------------------------------------
 # 1. LIVE STOCK STATUS
 # ---------------------------------------------------------
-elif menu == "📦 Live Stock":
+ elif menu == "📦 Live Stock":
     st.subheader("📦 Live Stock Inventory")
     try:
         response = supabase.table("stock").select("*").execute()
