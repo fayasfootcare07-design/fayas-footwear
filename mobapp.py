@@ -144,17 +144,21 @@ if menu == "📦 Live Stock":
                         if gender_col and gender_col in df_stock.columns
                         else []
                     )
+                    # DEFAULT EMPTY
                     gender_filter = st.multiselect(
                         "Gender Category",
                         options=gender_opts,
-                        default=gender_opts,
+                        default=[],
+                        placeholder="Select Gender...",
                     )
                 with col2:
                     brand_opts = df_stock[prod_col].unique()
+                    # DEFAULT EMPTY
                     brand_filter = st.multiselect(
                         "Brand / Product",
                         options=brand_opts,
-                        default=brand_opts,
+                        default=[],
+                        placeholder="Select Brand...",
                     )
                 with col3:
                     search_art = st.text_input("Search Art No", "")
