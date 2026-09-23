@@ -44,20 +44,33 @@ def generate_qr_code(data_str):
     return buf.getvalue()
 
 
+# --- UPDATED DATE & TIME FORMATTING FUNCTION ---
 def format_df_dates(df):
     if df.empty:
         return df
-    for col in df.columns:
-        if "created_at" in col or "date" in col or "time" in col or "updated_at" in col:
+    formatted_df = df.copy()
+    for col in formatted_df.columns:
+        if any(
+            keyword in col.lower()
+            for keyword in ["created_at", "date", "time", "updated_at", "timestamp"]
+        ):
             try:
-                df[col] = pd.to_datetime(df[col]).dt.tz_convert("Asia/Kolkata")
-                df[col] = df[col].dt.strftime("%d/%b/%y %I:%M %p")
+                # Convert to datetime with IST (Asia/Kolkata) timezone conversion
+                converted_series = pd.to_datetime(formatted_df[col], utc=True)
+                formatted_df[col] = (
+                    converted_series.dt.tz_convert("Asia/Kolkata").dt.strftime(
+                        "%d/%m/%Y %I:%M %p"
+                    )
+                )
             except Exception:
                 try:
-                    df[col] = pd.to_datetime(df[col]).dt.strftime("%d/%b/%y %I:%M %p")
+                    # Fallback for standard naive datetimes without UTC/TZ metadata
+                    formatted_df[col] = pd.to_datetime(
+                        formatted_df[col]
+                    ).dt.strftime("%d/%m/%Y %I:%M %p")
                 except Exception:
                     pass
-    return df
+    return formatted_df
 
 
 # --- HEADER & BRANDING ---
@@ -151,7 +164,7 @@ if menu == "📦 Live Stock":
                     key="stock_editor",
                     num_rows="dynamic",
                     disabled=["id", "created_at"],
-                    use_container_width=True
+                    use_container_width=True,
                 )
 
                 col_b1, col_b2 = st.columns([1, 1])
@@ -170,7 +183,7 @@ if menu == "📦 Live Stock":
                                         "qty": int(row["qty"]),
                                         "mrp_og": float(row.get("mrp_og", 0.0)),
                                         "wp": float(row.get("wp", 0.0)),
-                                        "mrp_d": float(row.get("mrp_d", 0.0))
+                                        "mrp_d": float(row.get("mrp_d", 0.0)),
                                     }
                                     supabase.table("stock").update(update_payload).eq("id", row_id).execute()
                             st.success("✅ Stock details updated successfully in Supabase!")
@@ -265,7 +278,7 @@ elif menu == "📊 Sales Analytics":
                         df_display,
                         key="sales_editor",
                         disabled=[c for c in display_cols if c != "Select"],
-                        use_container_width=True
+                        use_container_width=True,
                     )
 
                     if st.button("🗑️ Delete Selected Sales Record(s)", type="secondary"):
@@ -315,7 +328,7 @@ elif menu == "🎯 Product Insights(FLD Stocks)":
     tab1, tab2, tab3 = st.tabs([
         "🔥 Top / Fast Selling Products",
         "⚠️ Dead Stock (Zero Sales)",
-        "📉 Low Stock Alert (≤ 2 Pairs)"
+        "📉 Low Stock Alert (≤ 2 Pairs)",
     ])
 
     # TAB 1: Fast Selling
@@ -615,7 +628,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                             "qty": updated_qty,
                             "mrp_og": float(mrp_og),
                             "wp": float(wp),
-                            "mrp_d": float(mrp_d)
+                            "mrp_d": float(mrp_d),
                         }).eq("id", existing_row["id"]).execute()
                         st.success(f"Stock Updated! Added {qty} pairs to existing item. Total: {updated_qty}")
                     else:
