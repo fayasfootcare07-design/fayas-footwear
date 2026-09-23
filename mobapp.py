@@ -325,7 +325,6 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
             else:
                 df_stock = format_df_dates(df_stock)
                 
-                # Dynamic product column detection for stock & sales
                 stock_prod_col = next(
                     (c for c in ["product_name", "product"] if c in df_stock.columns),
                     "product",
@@ -340,7 +339,6 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
                     and "art_no" in df_stock.columns
                     and "art_no" in df_sales.columns
                 ):
-                    # Align column names before merging
                     df_sales_temp = df_sales.rename(columns={sales_prod_col: stock_prod_col})
                     
                     merge_cols = [c for c in [stock_prod_col, "gender", "art_no", "size"] if c in df_stock.columns and c in df_sales_temp.columns]
@@ -367,7 +365,7 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
             st.error(f"Error loading dead stock: {e}")
 
 # ---------------------------------------------------------
-# 4. QUICK SALE ENTRY (ADMIN ONLY)
+# 4. QUICK SALE ENTRY (ONE BY ONE & EMPTY BY DEFAULT)
 # ---------------------------------------------------------
 elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
     st.subheader("➕ Quick Sale Entry & Bill Generator")
@@ -376,132 +374,139 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
         df_stock = pd.DataFrame(stock_res.data)
 
         if df_stock.empty:
-            st.error("No stock available to sell!")
+            st.error("No stock available in database!")
         else:
             prod_col = next(
-                (
-                    c
-                    for c in ["product_name", "product"]
-                    if c in df_stock.columns
-                ),
+                (c for c in ["product_name", "product"] if c in df_stock.columns),
                 "product",
             )
             qty_col = next(
                 (c for c in ["qty", "quantity"] if c in df_stock.columns), "qty"
             )
 
-            with st.form("sale_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    product = st.selectbox(
-                        "Product / Brand", df_stock[prod_col].unique()
-                    )
-                    sub_stock = df_stock[df_stock[prod_col] == product]
-                    gender = st.selectbox(
-                        "Gender",
-                        (
-                            sub_stock["gender"].unique()
-                            if "gender" in sub_stock.columns
-                            else ["Gents", "Ladies", "Kids (B)", "Kids (G)"]
-                        ),
-                    )
-                    if "gender" in sub_stock.columns:
-                        sub_stock = sub_stock[sub_stock["gender"] == gender]
+            # Step 1: Product Selection
+            products_list = list(df_stock[prod_col].unique())
+            selected_product = st.selectbox(
+                "1. Select Product / Brand",
+                options=products_list,
+                index=None,
+                placeholder="Choose Brand...",
+            )
 
-                with col2:
-                    art_no = st.selectbox(
-                        "Art No",
-                        (
-                            sub_stock["art_no"].unique()
-                            if "art_no" in sub_stock.columns
-                            else ["N/A"]
-                        ),
-                    )
-                    if "art_no" in sub_stock.columns:
-                        sub_stock = sub_stock[sub_stock["art_no"] == art_no]
-                    size = st.selectbox(
-                        "Size",
-                        (
-                            sub_stock["size"].unique()
-                            if "size" in sub_stock.columns
-                            else ["N/A"]
-                        ),
-                    )
-
-                selected_item = sub_stock.iloc[0]
-                available_qty = selected_item.get(qty_col, 0)
-                item_price = selected_item.get("price", 0.0)
-
-                st.info(
-                    f"Available Quantity: **{available_qty}** | Price per"
-                    f" pair: **₹{item_price}**"
+            # Step 2: Gender Selection (Filtered by Product)
+            selected_gender = None
+            if selected_product:
+                sub_stock_1 = df_stock[df_stock[prod_col] == selected_product]
+                gender_list = list(sub_stock_1["gender"].unique()) if "gender" in sub_stock_1.columns else []
+                selected_gender = st.selectbox(
+                    "2. Select Gender",
+                    options=gender_list,
+                    index=None,
+                    placeholder="Choose Gender...",
                 )
 
-                col_s1, col_s2 = st.columns(2)
-                with col_s1:
-                    sell_qty = st.number_input(
-                        "Sell Quantity",
-                        min_value=1,
-                        max_value=max(1, int(available_qty)),
-                        value=1,
+            # Step 3: Art No Selection (Filtered by Product & Gender)
+            selected_art_no = None
+            if selected_product and selected_gender:
+                sub_stock_2 = sub_stock_1[sub_stock_1["gender"] == selected_gender] if "gender" in sub_stock_1.columns else sub_stock_1
+                art_list = list(sub_stock_2["art_no"].unique()) if "art_no" in sub_stock_2.columns else []
+                selected_art_no = st.selectbox(
+                    "3. Select Art No",
+                    options=art_list,
+                    index=None,
+                    placeholder="Choose Art No...",
+                )
+
+            # Step 4: Size Selection (Filtered by Product, Gender & Art No)
+            selected_size = None
+            if selected_product and selected_gender and selected_art_no:
+                sub_stock_3 = sub_stock_2[sub_stock_2["art_no"] == selected_art_no] if "art_no" in sub_stock_2.columns else sub_stock_2
+                size_list = list(sub_stock_3["size"].unique()) if "size" in sub_stock_3.columns else []
+                selected_size = st.selectbox(
+                    "4. Select Size",
+                    options=size_list,
+                    index=None,
+                    placeholder="Choose Size...",
+                )
+
+            # Show details & Sale Form only when ALL options are selected
+            if selected_product and selected_gender and selected_art_no and selected_size:
+                matched_rows = sub_stock_3[sub_stock_3["size"] == selected_size]
+                if not matched_rows.empty:
+                    selected_item = matched_rows.iloc[0]
+                    available_qty = selected_item.get(qty_col, 0)
+                    item_price = selected_item.get("price", 0.0)
+
+                    st.info(
+                        f"Available Quantity: **{available_qty}** | Price per pair: **₹{item_price}**"
                     )
-                with col_s2:
-                    sale_date = st.date_input(
-                        "Sale Date", value=get_ist_time().date()
-                    )
 
-                submit_sale = st.form_submit_button(
-                    "🧾 Complete Sale & Generate Receipt"
-                )
+                    with st.form("sale_entry_form"):
+                        col_s1, col_s2 = st.columns(2)
+                        with col_s1:
+                            sell_qty = st.number_input(
+                                "Sell Quantity",
+                                min_value=1,
+                                max_value=max(1, int(available_qty)),
+                                value=1,
+                            )
+                        with col_s2:
+                            sale_date = st.date_input(
+                                "Sale Date", value=get_ist_time().date()
+                            )
 
-            if submit_sale:
-                now_time = get_ist_time().time()
-                custom_datetime = (
-                    datetime.combine(sale_date, now_time)
-                    .replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-                    .isoformat()
-                )
+                        submit_sale = st.form_submit_button(
+                            "🧾 Complete Sale & Generate Receipt"
+                        )
 
-                sale_res = (
-                    supabase.table("sales").select("*").limit(1).execute()
-                )
-                s_cols = list(sale_res.data[0].keys()) if sale_res.data else []
-                s_qty_key = "quantity" if "quantity" in s_cols else "qty"
-                s_prod_key = "product" if "product" in s_cols else "product_name"
+                    if submit_sale:
+                        now_time = get_ist_time().time()
+                        custom_datetime = (
+                            datetime.combine(sale_date, now_time)
+                            .replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+                            .isoformat()
+                        )
 
-                sale_data = {
-                    "gender": gender,
-                    "art_no": art_no,
-                    "size": str(size),
-                    "price": float(item_price),
-                    "created_at": custom_datetime,
-                }
-                sale_data[s_qty_key] = int(sell_qty)
-                sale_data[s_prod_key] = product
+                        sale_res = (
+                            supabase.table("sales").select("*").limit(1).execute()
+                        )
+                        s_cols = list(sale_res.data[0].keys()) if sale_res.data else []
+                        s_qty_key = "quantity" if "quantity" in s_cols else "qty"
+                        s_prod_key = "product" if "product" in s_cols else "product_name"
 
-                supabase.table("sales").insert(sale_data).execute()
+                        sale_data = {
+                            "gender": selected_gender,
+                            "art_no": selected_art_no,
+                            "size": str(selected_size),
+                            "price": float(item_price),
+                            "created_at": custom_datetime,
+                        }
+                        sale_data[s_qty_key] = int(sell_qty)
+                        sale_data[s_prod_key] = selected_product
 
-                new_qty = max(0, int(available_qty) - int(sell_qty))
-                supabase.table("stock").update({qty_col: new_qty}).eq(
-                    "id", selected_item["id"]
-                ).execute()
+                        supabase.table("sales").insert(sale_data).execute()
 
-                st.success("Sale Recorded & Stock Deducted Successfully!")
+                        new_qty = max(0, int(available_qty) - int(sell_qty))
+                        supabase.table("stock").update({qty_col: new_qty}).eq(
+                            "id", selected_item["id"]
+                        ).execute()
 
-                bill_details = (
-                    f"FAYAS FOOTWEAR\nDate:"
-                    f" {sale_date.strftime('%d/%b/%y')}\nItem: {product}"
-                    f" ({gender})\nArt: {art_no} | Size: {size}\nQty: {sell_qty}"
-                    f" x ₹{item_price}\nTotal: ₹{sell_qty * item_price}"
-                )
-                qr_img = generate_qr_code(bill_details)
+                        st.success("Sale Recorded & Stock Deducted Successfully!")
 
-                st.write("### 🧾 Digital Receipt")
-                st.text(bill_details)
-                st.image(qr_img, caption="Scan QR for Digital Bill Receipt")
+                        bill_details = (
+                            f"FAYAS FOOTWEAR\nDate:"
+                            f" {sale_date.strftime('%d/%b/%y')}\nItem: {selected_product}"
+                            f" ({selected_gender})\nArt: {selected_art_no} | Size: {selected_size}\nQty: {sell_qty}"
+                            f" x ₹{item_price}\nTotal: ₹{sell_qty * item_price}"
+                        )
+                        qr_img = generate_qr_code(bill_details)
+
+                        st.write("### 🧾 Digital Receipt")
+                        st.text(bill_details)
+                        st.image(qr_img, caption="Scan QR for Digital Bill Receipt")
 
     except Exception as e:
-        st.error(f"Error completing sale: {e}")
+        st.error(f"Error during quick sale: {e}")
 
 # ---------------------------------------------------------
 # 5. STOCK UPDATE / NEW ENTRY (MANUAL)
