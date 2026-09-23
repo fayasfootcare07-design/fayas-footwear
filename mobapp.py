@@ -168,7 +168,9 @@ if menu == "📦 Live Stock":
                                         "art_no": str(row["art_no"]),
                                         "size": str(row["size"]),
                                         "qty": int(row["qty"]),
-                                        "price": float(row["price"])
+                                        "mrp_og": float(row["mrp_og"]),
+                                        "wp": float(row["wp"]),
+                                        "mrp_d": float(row["mrp_d"])
                                     }
                                     supabase.table("stock").update(update_payload).eq("id", row_id).execute()
                             st.success("✅ Stock details updated successfully in Supabase!")
@@ -205,7 +207,7 @@ if menu == "📦 Live Stock":
 # 2. SALES ANALYTICS (TODAY & HISTORY)
 # ---------------------------------------------------------
 elif menu == "📊 Sales Analytics":
-    st.subheader("📊 Sales Analytics & Revenue")
+    st.subheader("📊 Sales Analytics & Profitability")
     try:
         sales_res = supabase.table("sales").select("*").execute()
         df_sales = pd.DataFrame(sales_res.data)
@@ -239,15 +241,20 @@ elif menu == "📊 Sales Analytics":
                 st.warning("No sales recorded for this date.")
             else:
                 df_filtered["revenue"] = df_filtered["qty"] * df_filtered["price"]
+                df_filtered["cost"] = df_filtered["qty"] * df_filtered["wp"]
+                df_filtered["profit"] = df_filtered["revenue"] - df_filtered["cost"]
+
                 total_qty = df_filtered["qty"].sum()
                 total_rev = df_filtered["revenue"].sum()
+                total_profit = df_filtered["profit"].sum()
 
-                m1, m2 = st.columns(2)
+                m1, m2, m3 = st.columns(3)
                 m1.metric("Total Pair Sales", f"{total_qty} Pairs")
                 m2.metric("Total Revenue", f"₹{total_rev:,.2f}")
+                m3.metric("Estimated Profit", f"₹{total_profit:,.2f}")
 
                 df_filtered = format_df_dates(df_filtered)
-                display_cols = [c for c in df_filtered.columns if c not in ["datetime_ist", "date_only"]]
+                display_cols = [c for c in df_filtered.columns if c not in ["datetime_ist", "date_only", "cost", "profit"]]
                 st.dataframe(
                     df_filtered[display_cols].sort_values(by="id", ascending=False),
                     use_container_width=True,
@@ -422,7 +429,9 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
             )
 
             available_qty = 0
-            item_price = 0.0
+            mrp_og_val = 0.0
+            wp_val = 0.0
+            mrp_d_val = 0.0
             selected_item = None
 
             if selected_product and selected_gender and selected_art_no and selected_size:
@@ -430,12 +439,14 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 if not matched_rows.empty:
                     selected_item = matched_rows.iloc[0]
                     available_qty = selected_item.get("qty", 0)
-                    item_price = selected_item.get("price", 0.0)
+                    mrp_og_val = float(selected_item.get("mrp_og", 0.0))
+                    wp_val = float(selected_item.get("wp", 0.0))
+                    mrp_d_val = float(selected_item.get("mrp_d", 0.0))
 
-                    st.info(f"Available Quantity: **{available_qty}** | Price per pair: **₹{item_price}**")
+                    st.info(f"Available Qty: **{available_qty}** | Original MRP: **₹{mrp_og_val}** | Wholesale Price (WP): **₹{wp_val}** | Discounted MRP (MRP D): **₹{mrp_d_val}**")
 
             with st.form("exact_quick_sale_form"):
-                col_qty, col_pay = st.columns(2)
+                col_qty, col_price, col_pay = st.columns(3)
 
                 with col_qty:
                     sell_qty = st.number_input(
@@ -444,6 +455,14 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         max_value=max(1, int(available_qty)),
                         value=1,
                         key="num_qty",
+                    )
+
+                with col_price:
+                    selling_price = st.number_input(
+                        "Selling Price (MRP D)",
+                        min_value=0.0,
+                        value=mrp_d_val,
+                        key="num_price",
                     )
 
                 with col_pay:
@@ -476,7 +495,9 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         "art_no": selected_art_no,
                         "size": str(selected_size),
                         "qty": int(sell_qty),
-                        "price": float(item_price),
+                        "mrp_og": mrp_og_val,
+                        "wp": wp_val,
+                        "price": float(selling_price),
                         "payment_mode": payment_mode,
                         "created_at": custom_datetime,
                     }
@@ -494,8 +515,8 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                             f"FAYAS FOOTWEAR\nDate: {sale_date.strftime('%d/%b/%y')}\n"
                             f"Item: {selected_product} ({selected_gender})\n"
                             f"Art: {selected_art_no} | Size: {selected_size}\n"
-                            f"Qty: {sell_qty} x ₹{item_price}\n"
-                            f"Total: ₹{sell_qty * item_price}\n"
+                            f"Qty: {sell_qty} x ₹{selling_price}\n"
+                            f"Total: ₹{sell_qty * selling_price}\n"
                             f"Payment: {payment_mode}"
                         )
                         qr_img = generate_qr_code(bill_details)
@@ -518,10 +539,12 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             product_name = st.text_input("Brand / Product Name (e.g., Walkaroo)")
             gender = st.selectbox("Gender", ["Gents", "Ladies", "Kids (B)", "Kids (G)"])
             art_no = st.text_input("Art No (e.g., W-102)")
-        with col2:
             size = st.text_input("Size (e.g., 7 or 8)")
+        with col2:
             qty = st.number_input("Quantity", min_value=1, value=12)
-            price = st.number_input("Price (MRP)", min_value=0.0, value=350.0)
+            mrp_og = st.number_input("Original MRP (mrp_og)", min_value=0.0, value=500.0)
+            wp = st.number_input("Wholesale Price (wp)", min_value=0.0, value=250.0)
+            mrp_d = st.number_input("Discounted MRP (mrp_d)", min_value=0.0, value=350.0)
 
         submit_stock = st.form_submit_button("💾 Save / Update Stock")
 
@@ -547,7 +570,9 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         updated_qty = int(existing_row["qty"]) + int(qty)
                         supabase.table("stock").update({
                             "qty": updated_qty,
-                            "price": float(price),
+                            "mrp_og": float(mrp_og),
+                            "wp": float(wp),
+                            "mrp_d": float(mrp_d)
                         }).eq("id", existing_row["id"]).execute()
                         st.success(f"Stock Updated! Added {qty} pairs to existing item. Total: {updated_qty}")
                     else:
@@ -557,7 +582,9 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                             "art_no": art_no.strip(),
                             "size": str(size).strip(),
                             "qty": int(qty),
-                            "price": float(price),
+                            "mrp_og": float(mrp_og),
+                            "wp": float(wp),
+                            "mrp_d": float(mrp_d),
                             "created_at": get_ist_time().isoformat(),
                         }
 
