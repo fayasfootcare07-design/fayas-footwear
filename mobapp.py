@@ -83,11 +83,14 @@ else:
 
 # --- NAVIGATION ROUTING ---
 st.sidebar.title("Navigation")
-menu_options = ["📦 Live Stock", "🔥 Fast Selling Products", "📊 Sales Analytics"]
+menu_options = [
+    "📦 Live Stock",
+    "📊 Sales Analytics",
+    "🎯 Product Insights (Fast & Dead Stock)"
+]
 
 if st.session_state["admin_logged_in"]:
     menu_options.extend([
-        "⚠️ Dead Stock Finder",
         "➕ Quick Sale Entry",
         "📝 Stock Update / New Entry",
         "📷 Paper Photo Stock Upload (AI Scan)"
@@ -105,14 +108,13 @@ if menu == "📦 Live Stock":
         df_stock = pd.DataFrame(response.data)
 
         if df_stock.empty:
-            st.warning("No stock data found in Supabase database. Add stock via Manual Entry or AI Paper Scan!")
+            st.warning("No stock data found in Supabase database.")
         else:
             df_stock = format_df_dates(df_stock)
             prod_col = next((c for c in ['product_name', 'product', 'item_name'] if c in df_stock.columns), None)
             gender_col = next((c for c in ['gender', 'category'] if c in df_stock.columns), None)
 
             if not prod_col:
-                st.write("Current Stock Data Structure:")
                 st.dataframe(df_stock, use_container_width=True)
             else:
                 col1, col2, col3 = st.columns(3)
@@ -139,32 +141,7 @@ if menu == "📦 Live Stock":
         st.error(f"Error fetching stock: {e}")
 
 # ---------------------------------------------------------
-# 2. FAST SELLING PRODUCTS
-# ---------------------------------------------------------
-elif menu == "🔥 Fast Selling Products":
-    st.subheader("🔥 Top Selling Products")
-    try:
-        sales_res = supabase.table("sales").select("*").execute()
-        df_sales = pd.DataFrame(sales_res.data)
-
-        if df_sales.empty:
-            st.info("No sales records available yet.")
-        else:
-            df_sales = format_df_dates(df_sales)
-            qty_col = next((c for c in ['qty', 'quantity'] if c in df_sales.columns), 'qty')
-            group_cols = [c for c in ['product_name', 'product', 'gender', 'art_no', 'size'] if c in df_sales.columns]
-            if group_cols and qty_col in df_sales.columns:
-                fast_selling = df_sales.groupby(group_cols)[qty_col].sum().reset_index()
-                fast_selling = fast_selling.sort_values(by=qty_col, ascending=False)
-                st.dataframe(fast_selling, use_container_width=True)
-            else:
-                st.dataframe(df_sales, use_container_width=True)
-
-    except Exception as e:
-        st.error(f"Error calculating fast-selling items: {e}")
-
-# ---------------------------------------------------------
-# 3. SALES ANALYTICS (TODAY & HISTORY)
+# 2. SALES ANALYTICS (TODAY & HISTORY)
 # ---------------------------------------------------------
 elif menu == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & Revenue")
@@ -177,25 +154,23 @@ elif menu == "📊 Sales Analytics":
         else:
             qty_col = next((c for c in ['qty', 'quantity'] if c in df_sales.columns), 'qty')
             
-            # Convert created_at to IST datetime format for filtering
             df_sales['datetime_ist'] = pd.to_datetime(df_sales['created_at']).dt.tz_convert('Asia/Kolkata')
             df_sales['date_only'] = df_sales['datetime_ist'].dt.date
             
             today_date = get_ist_time().date()
 
-            # View Toggle Buttons
-            view_type = st.radio("Select View:", ["🔥 Today's Live Sales", "📜 History Sales"], horizontal=True)
+            view_type = st.radio("Select Sales View:", ["🔥 Today's Live Sales", "📜 History Sales (By Date)"], horizontal=True)
 
             if view_type == "🔥 Today's Live Sales":
                 st.write(f"### 🗓️ Today's Sales ({today_date.strftime('%d/%b/%Y')})")
                 df_filtered = df_sales[df_sales['date_only'] == today_date].copy()
             else:
-                st.write("### 📜 Sales History (Select Date)")
-                selected_date = st.date_input("Filter by Date", value=today_date - timedelta(days=1))
+                st.write("### 📜 Sales History")
+                selected_date = st.date_input("Select Date for History", value=today_date - timedelta(days=1))
                 df_filtered = df_sales[df_sales['date_only'] == selected_date].copy()
 
             if df_filtered.empty:
-                st.warning("No sales recorded for this selected period.")
+                st.warning("No sales recorded for this date.")
             else:
                 df_filtered['revenue'] = df_filtered[qty_col] * df_filtered['price']
                 total_qty = df_filtered[qty_col].sum()
@@ -213,37 +188,63 @@ elif menu == "📊 Sales Analytics":
         st.error(f"Error loading analytics: {e}")
 
 # ---------------------------------------------------------
-# 4. DEAD STOCK FINDER (ADMIN ONLY)
+# 3. COMBINED: PRODUCT INSIGHTS (FAST & DEAD STOCK)
 # ---------------------------------------------------------
-elif menu == "⚠️ Dead Stock Finder" and st.session_state["admin_logged_in"]:
-    st.subheader("⚠️ Low or Zero Selling Stock")
-    try:
-        stock_res = supabase.table("stock").select("*").execute()
-        sales_res = supabase.table("sales").select("*").execute()
+elif menu == "🎯 Product Insights (Fast & Dead Stock)":
+    st.subheader("🎯 Product Insights")
+    
+    tab1, tab2 = st.tabs(["🔥 Top / Fast Selling Products", "⚠️ Dead Stock (Zero Sales)"])
 
-        df_stock = pd.DataFrame(stock_res.data)
-        df_sales = pd.DataFrame(sales_res.data)
+    # TAB 1: Fast Selling
+    with tab1:
+        try:
+            sales_res = supabase.table("sales").select("*").execute()
+            df_sales = pd.DataFrame(sales_res.data)
 
-        if df_stock.empty:
-            st.info("Stock inventory is empty.")
-        else:
-            df_stock = format_df_dates(df_stock)
-            p_col = next((c for c in ['product_name', 'product'] if c in df_stock.columns), 'product')
-            if not df_sales.empty and 'art_no' in df_stock.columns and 'art_no' in df_sales.columns:
-                sold_items = df_sales[[p_col, 'gender', 'art_no', 'size']].drop_duplicates()
-                dead_stock = pd.merge(df_stock, sold_items, on=[p_col, 'gender', 'art_no', 'size'], how='left', indicator=True)
-                dead_stock = dead_stock[dead_stock['_merge'] == 'left_only'].drop(columns=['_merge'])
+            if df_sales.empty:
+                st.info("No sales data available yet.")
             else:
-                dead_stock = df_stock
+                qty_col = next((c for c in ['qty', 'quantity'] if c in df_sales.columns), 'qty')
+                group_cols = [c for c in ['product_name', 'product', 'gender', 'art_no', 'size'] if c in df_sales.columns]
+                
+                if group_cols and qty_col in df_sales.columns:
+                    fast_selling = df_sales.groupby(group_cols)[qty_col].sum().reset_index()
+                    fast_selling = fast_selling.sort_values(by=qty_col, ascending=False)
+                    st.dataframe(fast_selling, use_container_width=True)
+                else:
+                    st.dataframe(df_sales, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error loading fast selling products: {e}")
 
-            st.warning(f"Found {len(dead_stock)} stock items with zero sales record:")
-            st.dataframe(dead_stock, use_container_width=True)
+    # TAB 2: Dead Stock
+    with tab2:
+        try:
+            stock_res = supabase.table("stock").select("*").execute()
+            sales_res = supabase.table("sales").select("*").execute()
 
-    except Exception as e:
-        st.error(f"Error computing dead stock: {e}")
+            df_stock = pd.DataFrame(stock_res.data)
+            df_sales = pd.DataFrame(sales_res.data)
+
+            if df_stock.empty:
+                st.info("Stock inventory is empty.")
+            else:
+                df_stock = format_df_dates(df_stock)
+                p_col = next((c for c in ['product_name', 'product'] if c in df_stock.columns), 'product')
+                
+                if not df_sales.empty and 'art_no' in df_stock.columns and 'art_no' in df_sales.columns:
+                    sold_items = df_sales[[p_col, 'gender', 'art_no', 'size']].drop_duplicates()
+                    dead_stock = pd.merge(df_stock, sold_items, on=[p_col, 'gender', 'art_no', 'size'], how='left', indicator=True)
+                    dead_stock = dead_stock[dead_stock['_merge'] == 'left_only'].drop(columns=['_merge'])
+                else:
+                    dead_stock = df_stock
+
+                st.warning(f"Found {len(dead_stock)} stock items with zero sales record:")
+                st.dataframe(dead_stock, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error loading dead stock: {e}")
 
 # ---------------------------------------------------------
-# 5. QUICK SALE ENTRY (ADMIN ONLY)
+# 4. QUICK SALE ENTRY (ADMIN ONLY)
 # ---------------------------------------------------------
 elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
     st.subheader("➕ Quick Sale Entry & Bill Generator")
@@ -323,7 +324,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
         st.error(f"Error completing sale: {e}")
 
 # ---------------------------------------------------------
-# 6. STOCK UPDATE / NEW ENTRY (ADMIN ONLY)
+# 5. STOCK UPDATE / NEW ENTRY (ADMIN ONLY)
 # ---------------------------------------------------------
 elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_in"]:
     st.subheader("📝 Manual Stock Entry / Add New Items")
@@ -366,7 +367,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     st.error(f"Failed to add stock: {e}")
 
 # ---------------------------------------------------------
-# 7. PAPER PHOTO STOCK UPLOAD (AI SCAN - ADMIN ONLY)
+# 6. PAPER PHOTO STOCK UPLOAD (AI SCAN - ADMIN ONLY)
 # ---------------------------------------------------------
 elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["admin_logged_in"]:
     st.subheader("📷 Paper Photo Stock Upload (AI Scan)")
@@ -410,7 +411,6 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
                 except Exception as e:
                     st.error(f"Failed to parse paper image: {e}")
 
-    # Preview & Confirm Section
     if "extracted_stock_data" in st.session_state and st.session_state["extracted_stock_data"]:
         df_extracted = pd.DataFrame(st.session_state["extracted_stock_data"])
         st.write("### Preview Extracted Data")
