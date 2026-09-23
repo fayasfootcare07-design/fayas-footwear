@@ -3,4 +3,4 @@ pandas
 qrcode
 pillow
 supabase
-google-generativeai
+
