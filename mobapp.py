@@ -324,7 +324,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
         st.error(f"Error completing sale: {e}")
 
 # ---------------------------------------------------------
-# 5. STOCK UPDATE / NEW ENTRY (ADMIN ONLY)
+# 5. STOCK UPDATE / NEW ENTRY (MANUAL)
 # ---------------------------------------------------------
 elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_in"]:
     st.subheader("📝 Manual Stock Entry / Add New Items")
@@ -339,39 +339,61 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             qty = st.number_input("Quantity", min_value=1, value=12)
             price = st.number_input("Price (MRP)", min_value=0.0, value=350.0)
 
-        submit_stock = st.form_submit_button("💾 Save to Stock")
+        submit_stock = st.form_submit_button("💾 Save / Update Stock")
 
         if submit_stock:
             if not product_name or not art_no or not size:
                 st.error("Please fill all fields!")
             else:
                 try:
-                    stock_res = supabase.table("stock").select("*").limit(1).execute()
-                    cols = list(stock_res.data[0].keys()) if stock_res.data else []
-                    prod_key = "product" if "product" in cols else "product_name"
-                    qty_key = "quantity" if "quantity" in cols else "qty"
+                    all_stock = supabase.table("stock").select("*").execute()
+                    df_all = pd.DataFrame(all_stock.data) if all_stock.data else pd.DataFrame()
 
-                    payload = {
-                        "gender": gender,
-                        "art_no": art_no.strip(),
-                        "size": str(size).strip(),
-                        "price": float(price),
-                        "created_at": get_ist_time().isoformat()
-                    }
-                    payload[prod_key] = product_name.strip()
-                    payload[qty_key] = int(qty)
+                    prod_key = "product" if "product" in df_all.columns else "product_name"
+                    qty_key = "quantity" if "quantity" in df_all.columns else "qty"
 
-                    supabase.table("stock").insert(payload).execute()
-                    st.success("Stock Added Successfully!")
+                    # Check if already exists
+                    existing = pd.DataFrame()
+                    if not df_all.empty:
+                        existing = df_all[
+                            (df_all[prod_key].astype(str).str.lower() == product_name.strip().lower()) &
+                            (df_all["gender"].astype(str).str.lower() == gender.strip().lower()) &
+                            (df_all["art_no"].astype(str).str.lower() == art_no.strip().lower()) &
+                            (df_all["size"].astype(str) == str(size).strip())
+                        ]
+
+                    if not existing.empty:
+                        # UPDATE existing stock Qty
+                        existing_row = existing.iloc[0]
+                        updated_qty = int(existing_row[qty_key]) + int(qty)
+                        supabase.table("stock").update({
+                            qty_key: updated_qty,
+                            "price": float(price)
+                        }).eq("id", existing_row["id"]).execute()
+                        st.success(f"Stock Updated! Added {qty} pairs to existing item. Total: {updated_qty}")
+                    else:
+                        # INSERT new item
+                        payload = {
+                            "gender": gender,
+                            "art_no": art_no.strip(),
+                            "size": str(size).strip(),
+                            "price": float(price),
+                            "created_at": get_ist_time().isoformat()
+                        }
+                        payload[prod_key] = product_name.strip()
+                        payload[qty_key] = int(qty)
+
+                        supabase.table("stock").insert(payload).execute()
+                        st.success("New Stock Item Created Successfully!")
                 except Exception as e:
                     st.error(f"Failed to add stock: {e}")
 
 # ---------------------------------------------------------
-# 6. PAPER PHOTO STOCK UPLOAD (AI SCAN - ADMIN ONLY)
+# 6. PAPER PHOTO STOCK UPLOAD (AI SCAN WITH SMART UPDATE/MERGE)
 # ---------------------------------------------------------
 elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["admin_logged_in"]:
     st.subheader("📷 Paper Photo Stock Upload (AI Scan)")
-    st.write("Upload a photo of your handwritten or printed stock list to automatically extract and save inventory.")
+    st.write("Upload a photo of your handwritten or printed stock list.")
 
     uploaded_file = st.file_uploader("Upload Stock List Photo", type=["jpg", "png", "jpeg"])
 
@@ -411,35 +433,65 @@ elif menu == "📷 Paper Photo Stock Upload (AI Scan)" and st.session_state["adm
                 except Exception as e:
                     st.error(f"Failed to parse paper image: {e}")
 
+    # Preview & Smart Update/Insert Section
     if "extracted_stock_data" in st.session_state and st.session_state["extracted_stock_data"]:
         df_extracted = pd.DataFrame(st.session_state["extracted_stock_data"])
         st.write("### Preview Extracted Data")
         st.dataframe(df_extracted, use_container_width=True)
 
-        if st.button("✅ Confirm & Add to Stock"):
+        if st.button("✅ Confirm & Process Stock (Update / Add)"):
             try:
-                stock_check = supabase.table("stock").select("*").limit(1).execute()
-                sample_cols = list(stock_check.data[0].keys()) if stock_check.data else []
-                
-                prod_key = "product" if "product" in sample_cols else "product_name"
-                qty_key = "quantity" if "quantity" in sample_cols else "qty"
+                stock_res = supabase.table("stock").select("*").execute()
+                existing_stock = pd.DataFrame(stock_res.data) if stock_res.data else pd.DataFrame()
+
+                prod_key = "product" if not existing_stock.empty and "product" in existing_stock.columns else "product_name"
+                qty_key = "quantity" if not existing_stock.empty and "quantity" in existing_stock.columns else "qty"
 
                 for item in st.session_state["extracted_stock_data"]:
-                    row_data = {
-                        "gender": str(item.get("gender", "Gents")),
-                        "art_no": str(item.get("art_no", "")),
-                        "size": str(item.get("size", "")),
-                        "price": float(item.get("price", 0.0)),
-                        "created_at": get_ist_time().isoformat()
-                    }
-                    row_data[prod_key] = str(item.get("product_name", item.get("product", "")))
-                    row_data[qty_key] = int(item.get("qty", item.get("quantity", 0)))
+                    p_name = str(item.get("product_name", item.get("product", ""))).strip()
+                    g_name = str(item.get("gender", "Gents")).strip()
+                    a_num = str(item.get("art_no", "")).strip()
+                    s_val = str(item.get("size", "")).strip()
+                    add_qty = int(item.get("qty", item.get("quantity", 0)))
+                    item_price = float(item.get("price", 0.0))
 
-                    supabase.table("stock").insert(row_data).execute()
+                    # Check for existing match in database
+                    match = pd.DataFrame()
+                    if not existing_stock.empty:
+                        match = existing_stock[
+                            (existing_stock[prod_key].astype(str).str.lower() == p_name.lower()) &
+                            (existing_stock["gender"].astype(str).str.lower() == g_name.lower()) &
+                            (existing_stock["art_no"].astype(str).str.lower() == a_num.lower()) &
+                            (existing_stock["size"].astype(str) == s_val)
+                        ]
+
+                    if not match.empty:
+                        # Existing item -> UPDATE QTY
+                        row_id = match.iloc[0]["id"]
+                        current_q = int(match.iloc[0][qty_key])
+                        new_total_q = current_q + add_qty
+
+                        supabase.table("stock").update({
+                            qty_key: new_total_q,
+                            "price": item_price
+                        }).eq("id", row_id).execute()
+                    else:
+                        # New item -> INSERT
+                        row_data = {
+                            "gender": g_name,
+                            "art_no": a_num,
+                            "size": s_val,
+                            "price": item_price,
+                            "created_at": get_ist_time().isoformat()
+                        }
+                        row_data[prod_key] = p_name
+                        row_data[qty_key] = add_qty
+
+                        supabase.table("stock").insert(row_data).execute()
 
                 st.balloons()
-                st.success("All items successfully imported into Supabase Stock!")
+                st.success("Stock processing complete! Existing items updated & new items added seamlessly.")
                 del st.session_state["extracted_stock_data"]
                 st.rerun()
             except Exception as e:
-                st.error(f"Failed to save stock to database: {e}")
+                st.error(f"Failed to process stock: {e}")
