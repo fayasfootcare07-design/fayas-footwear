@@ -103,7 +103,7 @@ menu = st.sidebar.radio("Go to", menu_options)
 # ---------------------------------------------------------
 # 1. LIVE STOCK STATUS
 # ---------------------------------------------------------
- elif menu == "📦 Live Stock":
+if menu == "📦 Live Stock":
     st.subheader("📦 Live Stock Inventory")
     try:
         response = supabase.table("stock").select("*").execute()
@@ -180,6 +180,7 @@ menu = st.sidebar.radio("Go to", menu_options)
 
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
+
 # ---------------------------------------------------------
 # 2. SALES ANALYTICS (TODAY & HISTORY)
 # ---------------------------------------------------------
