@@ -89,7 +89,7 @@ st.sidebar.title("Navigation")
 menu_options = [
     "📦 Live Stock",
     "📊 Sales Analytics",
-    "🎯 Product Insights (Fast, Low & Dead Stock)",
+    "🎯 Product Insights ",
 ]
 
 if st.session_state["admin_logged_in"]:
