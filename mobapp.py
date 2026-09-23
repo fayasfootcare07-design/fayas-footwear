@@ -486,7 +486,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     wp_val = float(selected_item.get("wp", 0.0))
                     mrp_d_val = float(selected_item.get("mrp_d", 0.0))
 
-                    st.info(f"Available Qty: **{available_qty}** | Original MRP: **₹{mrp_og_val}** | Wholesale Price (WP): **₹{wp_val}** | Discounted MRP (MRP D): **₹{mrp_d_val}**")
+                    st.info(f"Available Qty: **{available_qty}** | Original MRP: **₹{mrp_og_val}** | Wholesale Price (WP): **₹{wp_val}** | Duplicate MRP (MRP D): **₹{mrp_d_val}**")
 
             with st.form("exact_quick_sale_form"):
                 col_qty, col_price, col_pay = st.columns(3)
@@ -587,7 +587,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             qty = st.number_input("Quantity", min_value=1, value=12)
             mrp_og = st.number_input("Original MRP (mrp_og)", min_value=0.0, value=500.0)
             wp = st.number_input("Wholesale Price (wp)", min_value=0.0, value=250.0)
-            mrp_d = st.number_input("Discounted MRP (mrp_d)", min_value=0.0, value=350.0)
+            mrp_d = st.number_input("Duplicate MRP (mrp_d)", min_value=0.0, value=350.0)
 
         submit_stock = st.form_submit_button("💾 Save / Update Stock")
 
