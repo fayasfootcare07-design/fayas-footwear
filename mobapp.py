@@ -257,7 +257,7 @@ elif menu == "📊 Sales Analytics":
         st.error(f"Error loading analytics: {e}")
 
 # ---------------------------------------------------------
-# 3. PRODUCT INSIGHTS (FAST, LOW & DEAD STOCK)
+# 3. PRODUCT INSIGHTS
 # ---------------------------------------------------------
 elif menu == "🎯 Product Insights (Fast, Low & Dead Stock)":
     st.subheader("🎯 Product Insights")
