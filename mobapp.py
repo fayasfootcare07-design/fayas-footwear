@@ -89,7 +89,7 @@ st.sidebar.title("Navigation")
 menu_options = [
     "📦 Live Stock",
     "📊 Sales Analytics",
-    "🎯 Product Insights (Fast, Low & Dead Stock)",
+    "🎯 Product Insights(FLD Stocks)",
 ]
 
 if st.session_state["admin_logged_in"]:
@@ -259,7 +259,7 @@ elif menu == "📊 Sales Analytics":
 # ---------------------------------------------------------
 # 3. PRODUCT INSIGHTS
 # ---------------------------------------------------------
-elif menu == "🎯 Product Insights (Fast, Low & Dead Stock)":
+elif menu == "🎯 Product Insights(FLD Stocks)":
     st.subheader("🎯 Product Insights")
 
     tab1, tab2, tab3 = st.tabs([
@@ -326,7 +326,6 @@ elif menu == "🎯 Product Insights (Fast, Low & Dead Stock)":
             if df_stock.empty:
                 st.info("Stock inventory is empty.")
             else:
-                # Filter items where quantity is 2 or less (including 1)
                 low_stock = df_stock[df_stock["qty"] <= 2].sort_values(by="qty", ascending=True)
 
                 if low_stock.empty:
