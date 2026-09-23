@@ -43,9 +43,6 @@ def generate_qr_code(data_str):
     return buf.getvalue()
 
 def format_df_dates(df):
-    """
-    Standardizes all date/time columns in any dataframe to IST format: 21/Sep/26 02:09 PM
-    """
     if df.empty:
         return df
     for col in df.columns:
@@ -167,7 +164,7 @@ elif menu == "🔥 Fast Selling Products":
         st.error(f"Error calculating fast-selling items: {e}")
 
 # ---------------------------------------------------------
-# 3. SALES ANALYTICS
+# 3. SALES ANALYTICS (TODAY & HISTORY)
 # ---------------------------------------------------------
 elif menu == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & Revenue")
@@ -179,19 +176,38 @@ elif menu == "📊 Sales Analytics":
             st.info("No sales data recorded yet.")
         else:
             qty_col = next((c for c in ['qty', 'quantity'] if c in df_sales.columns), 'qty')
-            df_sales['revenue'] = df_sales[qty_col] * df_sales['price']
-            total_qty = df_sales[qty_col].sum()
-            total_rev = df_sales['revenue'].sum()
+            
+            # Convert created_at to IST datetime format for filtering
+            df_sales['datetime_ist'] = pd.to_datetime(df_sales['created_at']).dt.tz_convert('Asia/Kolkata')
+            df_sales['date_only'] = df_sales['datetime_ist'].dt.date
+            
+            today_date = get_ist_time().date()
 
-            m1, m2 = st.columns(2)
-            m1.metric("Total Pair Sales", f"{total_qty} Pairs")
-            m2.metric("Total Revenue", f"₹{total_rev:,.2f}")
+            # View Toggle Buttons
+            view_type = st.radio("Select View:", ["🔥 Today's Live Sales", "📜 History Sales"], horizontal=True)
 
-            # Apply IST Date Formatting to all date/time columns
-            df_sales = format_df_dates(df_sales)
+            if view_type == "🔥 Today's Live Sales":
+                st.write(f"### 🗓️ Today's Sales ({today_date.strftime('%d/%b/%Y')})")
+                df_filtered = df_sales[df_sales['date_only'] == today_date].copy()
+            else:
+                st.write("### 📜 Sales History (Select Date)")
+                selected_date = st.date_input("Filter by Date", value=today_date - timedelta(days=1))
+                df_filtered = df_sales[df_sales['date_only'] == selected_date].copy()
 
-            st.write("### Recent Transactions")
-            st.dataframe(df_sales.sort_values(by='id', ascending=False), use_container_width=True)
+            if df_filtered.empty:
+                st.warning("No sales recorded for this selected period.")
+            else:
+                df_filtered['revenue'] = df_filtered[qty_col] * df_filtered['price']
+                total_qty = df_filtered[qty_col].sum()
+                total_rev = df_filtered['revenue'].sum()
+
+                m1, m2 = st.columns(2)
+                m1.metric("Total Pair Sales", f"{total_qty} Pairs")
+                m2.metric("Total Revenue", f"₹{total_rev:,.2f}")
+
+                df_filtered = format_df_dates(df_filtered)
+                display_cols = [c for c in df_filtered.columns if c not in ['datetime_ist', 'date_only']]
+                st.dataframe(df_filtered[display_cols].sort_values(by='id', ascending=False), use_container_width=True)
 
     except Exception as e:
         st.error(f"Error loading analytics: {e}")
@@ -262,11 +278,17 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
 
                 st.info(f"Available Quantity: **{available_qty}** | Price per pair: **₹{item_price}**")
 
-                sell_qty = st.number_input("Sell Quantity", min_value=1, max_value=max(1, int(available_qty)), value=1)
+                col_s1, col_s2 = st.columns(2)
+                with col_s1:
+                    sell_qty = st.number_input("Sell Quantity", min_value=1, max_value=max(1, int(available_qty)), value=1)
+                with col_s2:
+                    sale_date = st.date_input("Sale Date", value=get_ist_time().date())
+
                 submit_sale = st.form_submit_button("🧾 Complete Sale & Generate Receipt")
 
             if submit_sale:
-                current_ist = get_ist_time().isoformat()
+                now_time = get_ist_time().time()
+                custom_datetime = datetime.combine(sale_date, now_time).replace(tzinfo=ZoneInfo('Asia/Kolkata')).isoformat()
 
                 sale_res = supabase.table("sales").select("*").limit(1).execute()
                 s_cols = list(sale_res.data[0].keys()) if sale_res.data else []
@@ -278,7 +300,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     "art_no": art_no,
                     "size": str(size),
                     "price": float(item_price),
-                    "created_at": current_ist
+                    "created_at": custom_datetime
                 }
                 sale_data[s_qty_key] = int(sell_qty)
                 sale_data[s_prod_key] = product
@@ -290,7 +312,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
 
                 st.success("Sale Recorded & Stock Deducted Successfully!")
 
-                bill_details = f"FAYAS FOOTWEAR\nDate: {get_ist_time().strftime('%d/%b/%y %I:%M %p')}\nItem: {product} ({gender})\nArt: {art_no} | Size: {size}\nQty: {sell_qty} x ₹{item_price}\nTotal: ₹{sell_qty * item_price}"
+                bill_details = f"FAYAS FOOTWEAR\nDate: {sale_date.strftime('%d/%b/%y')}\nItem: {product} ({gender})\nArt: {art_no} | Size: {size}\nQty: {sell_qty} x ₹{item_price}\nTotal: ₹{sell_qty * item_price}"
                 qr_img = generate_qr_code(bill_details)
 
                 st.write("### 🧾 Digital Receipt")
