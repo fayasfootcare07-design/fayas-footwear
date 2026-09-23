@@ -620,7 +620,6 @@ elif (
         if st.button("🔴 Process Paper & Extract Stock Details"):
             with st.spinner("AI is scanning and parsing your stock photo..."):
                 try:
-                    # Configured with gemini-3.6-flash
                     model = genai.GenerativeModel("gemini-3.6-flash")
 
                     prompt = """
@@ -659,17 +658,30 @@ elif (
                 except Exception as e:
                     st.error(f"Failed to parse paper image: {e}")
 
-    # Preview & Smart Update/Insert Section
+    # Preview & Editable Data Section
     if (
         "extracted_stock_data" in st.session_state
         and st.session_state["extracted_stock_data"]
     ):
+        st.write("### Preview & Edit Extracted Data")
+        st.caption("✏️ Click any cell to fix mistakes or edit details before saving.")
+
+        # Converted to DataFrame for Data Editor
         df_extracted = pd.DataFrame(st.session_state["extracted_stock_data"])
-        st.write("### Preview Extracted Data")
-        st.dataframe(df_extracted, use_container_width=True)
+
+        # Interactive Data Editor
+        edited_df = st.data_editor(
+            df_extracted,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="stock_editor"
+        )
 
         if st.button("✅ Confirm & Process Stock (Update / Add)"):
             try:
+                # Convert edited DataFrame back to records list
+                final_items = edited_df.to_dict(orient="records")
+
                 stock_res = supabase.table("stock").select("*").execute()
                 existing_stock = (
                     pd.DataFrame(stock_res.data)
@@ -690,7 +702,7 @@ elif (
                     else "qty"
                 )
 
-                for item in st.session_state["extracted_stock_data"]:
+                for item in final_items:
                     p_name = str(
                         item.get("product_name", item.get("product", ""))
                     ).strip()
