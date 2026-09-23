@@ -364,10 +364,11 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
         except Exception as e:
             st.error(f"Error loading dead stock: {e}")
 # ---------------------------------------------------------
-# 4. QUICK SALE ENTRY (GRID LAYOUT - EVERYTHING VISIBLE & EMPTY DEFAULT)
+# 4. QUICK SALE ENTRY (EXACT SKETCH LAYOUT)
 # ---------------------------------------------------------
 elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
-    st.subheader("➕ Quick Sale Entry & Bill Generator")
+    st.subheader("Quick Sale Entry")
+
     try:
         stock_res = supabase.table("stock").select("*").execute()
         df_stock = pd.DataFrame(stock_res.data)
@@ -383,70 +384,64 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 (c for c in ["qty", "quantity"] if c in df_stock.columns), "qty"
             )
 
-            # 2 Columns Layout for Inputs
-            col_a, col_b = st.columns(2)
+            # --- 1. Product ---
+            products_list = list(df_stock[prod_col].unique())
+            selected_product = st.selectbox(
+                "Product",
+                options=products_list,
+                index=None,
+                placeholder="Select Product...",
+            )
 
-            # Step 1: Product Selection
-            with col_a:
-                products_list = list(df_stock[prod_col].unique())
-                selected_product = st.selectbox(
-                    "Product / Brand",
-                    options=products_list,
-                    index=None,
-                    placeholder="Choose Brand...",
-                )
-
-            # Step 2: Gender Selection (Filtered by Product)
+            # --- 2. Gender ---
             gender_list = []
             if selected_product:
-                sub_stock_1 = df_stock[df_stock[prod_col] == selected_product]
-                if "gender" in sub_stock_1.columns:
-                    gender_list = list(sub_stock_1["gender"].unique())
+                sub_1 = df_stock[df_stock[prod_col] == selected_product]
+                if "gender" in sub_1.columns:
+                    gender_list = list(sub_1["gender"].unique())
 
-            with col_b:
-                selected_gender = st.selectbox(
-                    "Gender",
-                    options=gender_list,
-                    index=None,
-                    placeholder="Choose Gender...",
-                    disabled=not bool(selected_product)
-                )
+            selected_gender = st.selectbox(
+                "Gender",
+                options=gender_list,
+                index=None,
+                placeholder="Select Gender...",
+            )
 
-            # Step 3: Art No Selection (Filtered by Product & Gender)
+            # --- 3. Art No ---
             art_list = []
             if selected_product and selected_gender:
-                sub_stock_2 = sub_stock_1[sub_stock_1["gender"] == selected_gender] if "gender" in sub_stock_1.columns else sub_stock_1
-                if "art_no" in sub_stock_2.columns:
-                    art_list = list(sub_stock_2["art_no"].unique())
+                sub_2 = sub_1[sub_1["gender"] == selected_gender] if "gender" in sub_1.columns else sub_1
+                if "art_no" in sub_2.columns:
+                    art_list = list(sub_2["art_no"].unique())
 
-            with col_a:
-                selected_art_no = st.selectbox(
-                    "Art No",
-                    options=art_list,
-                    index=None,
-                    placeholder="Choose Art No...",
-                    disabled=not bool(selected_gender)
-                )
+            selected_art_no = st.selectbox(
+                "Art No",
+                options=art_list,
+                index=None,
+                placeholder="Select Art No...",
+            )
 
-            # Step 4: Size Selection (Filtered by Product, Gender & Art No)
+            # --- 4. Size ---
             size_list = []
             if selected_product and selected_gender and selected_art_no:
-                sub_stock_3 = sub_stock_2[sub_stock_2["art_no"] == selected_art_no] if "art_no" in sub_stock_2.columns else sub_stock_2
-                if "size" in sub_stock_3.columns:
-                    size_list = list(sub_stock_3["size"].unique())
+                sub_3 = sub_2[sub_2["art_no"] == selected_art_no] if "art_no" in sub_2.columns else sub_2
+                if "size" in sub_3.columns:
+                    size_list = list(sub_3["size"].unique())
 
-            with col_b:
-                selected_size = st.selectbox(
-                    "Size",
-                    options=size_list,
-                    index=None,
-                    placeholder="Choose Size...",
-                    disabled=not bool(selected_art_no)
-                )
+            selected_size = st.selectbox(
+                "Size",
+                options=size_list,
+                index=None,
+                placeholder="Select Size...",
+            )
 
-            # Show Stock Info & Form once ALL 4 are selected
+            # Fetch matched item details
+            available_qty = 0
+            item_price = 0.0
+            selected_item = None
+
             if selected_product and selected_gender and selected_art_no and selected_size:
-                matched_rows = sub_stock_3[sub_stock_3["size"] == selected_size]
+                matched_rows = sub_3[sub_3["size"] == selected_size] if "size" in sub_3.columns else sub_3
                 if not matched_rows.empty:
                     selected_item = matched_rows.iloc[0]
                     available_qty = selected_item.get(qty_col, 0)
@@ -456,49 +451,74 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         f"Available Quantity: **{available_qty}** | Price per pair: **₹{item_price}**"
                     )
 
-                    with st.form("sale_entry_form"):
-                        col_s1, col_s2 = st.columns(2)
-                        with col_s1:
-                            sell_qty = st.number_input(
-                                "Sell Quantity",
-                                min_value=1,
-                                max_value=max(1, int(available_qty)),
-                                value=1,
-                            )
-                        with col_s2:
-                            sale_date = st.date_input(
-                                "Sale Date", value=get_ist_time().date()
-                            )
+            # --- Form: Quantity, Payment, Sale Date & Buttons ---
+            with st.form("exact_quick_sale_form"):
+                col_qty, col_pay = st.columns(2)
 
-                        submit_sale = st.form_submit_button(
-                            "🧾 Complete Sale & Generate Receipt"
-                        )
+                with col_qty:
+                    sell_qty = st.number_input(
+                        "Quantity",
+                        min_value=1,
+                        max_value=max(1, int(available_qty)),
+                        value=1,
+                    )
+
+                with col_pay:
+                    payment_mode = st.radio(
+                        "Payment",
+                        options=["Cash", "UPI"],
+                        horizontal=True
+                    )
+
+                # --- Sale Date ---
+                sale_date = st.date_input(
+                    "Sale Date",
+                    value=get_ist_time().date()
+                )
+
+                # --- Bottom Action Buttons ---
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    submit_sale = st.form_submit_button("Sale")
+                with col_btn2:
+                    generate_qr_btn = st.form_submit_button("Generate QR")
+
+            # --- Action Handler ---
+            if submit_sale or generate_qr_btn:
+                if not (selected_product and selected_gender and selected_art_no and selected_size):
+                    st.error("Please select Product, Gender, Art No, and Size first!")
+                elif selected_item is None:
+                    st.error("Selected item not found in stock!")
+                else:
+                    now_time = get_ist_time().time()
+                    custom_datetime = (
+                        datetime.combine(sale_date, now_time)
+                        .replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+                        .isoformat()
+                    )
+
+                    sale_res = (
+                        supabase.table("sales").select("*").limit(1).execute()
+                    )
+                    s_cols = list(sale_res.data[0].keys()) if sale_res.data else []
+                    s_qty_key = "quantity" if "quantity" in s_cols else "qty"
+                    s_prod_key = "product" if "product" in s_cols else "product_name"
+
+                    sale_data = {
+                        "gender": selected_gender,
+                        "art_no": selected_art_no,
+                        "size": str(selected_size),
+                        "price": float(item_price),
+                        "created_at": custom_datetime,
+                    }
+                    sale_data[s_qty_key] = int(sell_qty)
+                    sale_data[s_prod_key] = selected_product
+
+                    if "payment_mode" in s_cols or "payment" in s_cols:
+                        pay_key = "payment_mode" if "payment_mode" in s_cols else "payment"
+                        sale_data[pay_key] = payment_mode
 
                     if submit_sale:
-                        now_time = get_ist_time().time()
-                        custom_datetime = (
-                            datetime.combine(sale_date, now_time)
-                            .replace(tzinfo=ZoneInfo("Asia/Kolkata"))
-                            .isoformat()
-                        )
-
-                        sale_res = (
-                            supabase.table("sales").select("*").limit(1).execute()
-                        )
-                        s_cols = list(sale_res.data[0].keys()) if sale_res.data else []
-                        s_qty_key = "quantity" if "quantity" in s_cols else "qty"
-                        s_prod_key = "product" if "product" in s_cols else "product_name"
-
-                        sale_data = {
-                            "gender": selected_gender,
-                            "art_no": selected_art_no,
-                            "size": str(selected_size),
-                            "price": float(item_price),
-                            "created_at": custom_datetime,
-                        }
-                        sale_data[s_qty_key] = int(sell_qty)
-                        sale_data[s_prod_key] = selected_product
-
                         supabase.table("sales").insert(sale_data).execute()
 
                         new_qty = max(0, int(available_qty) - int(sell_qty))
@@ -506,13 +526,14 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                             "id", selected_item["id"]
                         ).execute()
 
-                        st.success("Sale Recorded & Stock Deducted Successfully!")
+                        st.success(f"Sale Recorded ({payment_mode}) & Stock Deducted Successfully!")
 
+                    if generate_qr_btn or submit_sale:
                         bill_details = (
                             f"FAYAS FOOTWEAR\nDate:"
                             f" {sale_date.strftime('%d/%b/%y')}\nItem: {selected_product}"
                             f" ({selected_gender})\nArt: {selected_art_no} | Size: {selected_size}\nQty: {sell_qty}"
-                            f" x ₹{item_price}\nTotal: ₹{sell_qty * item_price}"
+                            f" x ₹{item_price}\nTotal: ₹{sell_qty * item_price}\nPayment: {payment_mode}"
                         )
                         qr_img = generate_qr_code(bill_details)
 
@@ -522,7 +543,6 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
 
     except Exception as e:
         st.error(f"Error during quick sale: {e}")
-
 # ---------------------------------------------------------
 # 5. STOCK UPDATE / NEW ENTRY (MANUAL)
 # ---------------------------------------------------------
