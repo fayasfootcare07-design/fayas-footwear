@@ -363,11 +363,34 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
                 st.dataframe(dead_stock, use_container_width=True)
         except Exception as e:
             st.error(f"Error loading dead stock: {e}")
+import streamlit.components.v1 as components
+
 # ---------------------------------------------------------
-# 4. QUICK SALE ENTRY (EXACT SKETCH LAYOUT)
+# 4. QUICK SALE ENTRY (WITH ENTER KEY AUTO FOCUS JUMP)
 # ---------------------------------------------------------
 elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
     st.subheader("Quick Sale Entry")
+
+    # JavaScript script to jump to next input on Enter key press
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        doc.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const inputs = Array.from(doc.querySelectorAll('input[type="text"], input[role="combobox"], input[type="number"]'));
+                const activeEl = doc.activeElement;
+                const index = inputs.indexOf(activeEl);
+                if (index > -1 && index < inputs.length - 1) {
+                    inputs[index + 1].focus();
+                    e.preventDefault();
+                }
+            }
+        });
+        </script>
+        """,
+        height=0,
+    )
 
     try:
         stock_res = supabase.table("stock").select("*").execute()
@@ -391,6 +414,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 options=products_list,
                 index=None,
                 placeholder="Select Product...",
+                key="sb_product"
             )
 
             # --- 2. Gender ---
@@ -405,6 +429,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 options=gender_list,
                 index=None,
                 placeholder="Select Gender...",
+                key="sb_gender"
             )
 
             # --- 3. Art No ---
@@ -419,6 +444,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 options=art_list,
                 index=None,
                 placeholder="Select Art No...",
+                key="sb_art_no"
             )
 
             # --- 4. Size ---
@@ -433,6 +459,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 options=size_list,
                 index=None,
                 placeholder="Select Size...",
+                key="sb_size"
             )
 
             # Fetch matched item details
@@ -461,6 +488,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         min_value=1,
                         max_value=max(1, int(available_qty)),
                         value=1,
+                        key="num_qty"
                     )
 
                 with col_pay:
@@ -542,8 +570,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         st.image(qr_img, caption="Scan QR for Digital Bill Receipt")
 
     except Exception as e:
-        st.error(f"Error during quick sale: {e}")
-# ---------------------------------------------------------
+        st.error(f"Error during quick sale: {e}")# ---------------------------------------------------------
 # 5. STOCK UPDATE / NEW ENTRY (MANUAL)
 # ---------------------------------------------------------
 elif (
