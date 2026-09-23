@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
-import google.generativeai as genai
 import pandas as pd
 from PIL import Image
 import qrcode
@@ -22,10 +21,8 @@ st.set_page_config(
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    genai.configure(api_key=GEMINI_API_KEY)
 except Exception as e:
     st.error(
         f"Secret Configuration Error: Check your Streamlit Secrets! Details: {e}"
@@ -107,7 +104,6 @@ if st.session_state["admin_logged_in"]:
     menu_options.extend([
         "➕ Quick Sale Entry",
         "📝 Stock Update / New Entry",
-        "📷 Paper Photo Stock Upload (AI Scan)",
     ])
 
 menu = st.sidebar.radio("Go to", menu_options)
@@ -264,7 +260,7 @@ elif menu == "📊 Sales Analytics":
         st.error(f"Error loading analytics: {e}")
 
 # ---------------------------------------------------------
-# 3. COMBINED: PRODUCT INSIGHTS (FAST & DEAD STOCK)
+# 3. PRODUCT INSIGHTS (FAST & DEAD STOCK)
 # ---------------------------------------------------------
 elif menu == "🎯 Product Insights (Fast & Dead Stock)":
     st.subheader("🎯 Product Insights")
@@ -596,173 +592,3 @@ elif (
                         st.success("New Stock Item Created Successfully!")
                 except Exception as e:
                     st.error(f"Failed to add stock: {e}")
-
-# ---------------------------------------------------------
-# 6. PAPER PHOTO STOCK UPLOAD (AI SCAN WITH SMART UPDATE/MERGE)
-# ---------------------------------------------------------
-elif (
-    menu == "📷 Paper Photo Stock Upload (AI Scan)"
-    and st.session_state["admin_logged_in"]
-):
-    st.subheader("📷 Paper Photo Stock Upload (AI Scan)")
-    st.write("Upload a photo of your handwritten or printed stock list.")
-
-    uploaded_file = st.file_uploader(
-        "Upload Stock List Photo", type=["jpg", "png", "jpeg"]
-    )
-
-    if uploaded_file:
-        image = Image.open(uploaded_file)
-        st.image(
-            image, caption="Uploaded Paper Photo", use_container_width=True
-        )
-
-        if st.button("🔴 Process Paper & Extract Stock Details"):
-            with st.spinner("AI is scanning and parsing your stock photo..."):
-                try:
-                    model = genai.GenerativeModel("gemini-3.6-flash")
-
-                    prompt = """
-                    Extract the stock details from this paper image and return ONLY a valid JSON array.
-                    Keys required for each item:
-                    - "product_name": String (e.g., Walkaroo, Paragon, VKC)
-                    - "gender": String ("Gents", "Ladies", or "Kids")
-                    - "art_no": String (e.g., W-102)
-                    - "size": Integer or String (e.g., 7)
-                    - "qty": Integer
-                    - "price": Float or Integer (MRP price)
-
-                    Return RAW JSON ONLY. No markdown formatting, no backticks, no explanatory text.
-                    """
-
-                    response = model.generate_content([prompt, image])
-
-                    if not response or not response.text:
-                        st.error(
-                            "No text returned from AI. Try uploading a clearer"
-                            " image."
-                        )
-                    else:
-                        clean_text = (
-                            response.text.replace("```json", "")
-                            .replace("```", "")
-                            .strip()
-                        )
-                        extracted_data = json.loads(clean_text)
-
-                        st.session_state["extracted_stock_data"] = (
-                            extracted_data
-                        )
-                        st.success("Successfully extracted stock items!")
-
-                except Exception as e:
-                    st.error(f"Failed to parse paper image: {e}")
-
-    # Preview & Editable Data Section
-    if (
-        "extracted_stock_data" in st.session_state
-        and st.session_state["extracted_stock_data"]
-    ):
-        st.write("### Preview & Edit Extracted Data")
-        st.caption("✏️ Click any cell to fix mistakes or edit details before saving.")
-
-        # Converted to DataFrame for Data Editor
-        df_extracted = pd.DataFrame(st.session_state["extracted_stock_data"])
-
-        # Interactive Data Editor
-        edited_df = st.data_editor(
-            df_extracted,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="stock_editor"
-        )
-
-        if st.button("✅ Confirm & Process Stock (Update / Add)"):
-            try:
-                # Convert edited DataFrame back to records list
-                final_items = edited_df.to_dict(orient="records")
-
-                stock_res = supabase.table("stock").select("*").execute()
-                existing_stock = (
-                    pd.DataFrame(stock_res.data)
-                    if stock_res.data
-                    else pd.DataFrame()
-                )
-
-                prod_key = (
-                    "product"
-                    if not existing_stock.empty
-                    and "product" in existing_stock.columns
-                    else "product_name"
-                )
-                qty_key = (
-                    "quantity"
-                    if not existing_stock.empty
-                    and "quantity" in existing_stock.columns
-                    else "qty"
-                )
-
-                for item in final_items:
-                    p_name = str(
-                        item.get("product_name", item.get("product", ""))
-                    ).strip()
-                    g_name = str(item.get("gender", "Gents")).strip()
-                    a_num = str(item.get("art_no", "")).strip()
-                    s_val = str(item.get("size", "")).strip()
-                    add_qty = int(item.get("qty", item.get("quantity", 0)))
-                    item_price = float(item.get("price", 0.0))
-
-                    # Check for existing match in database
-                    match = pd.DataFrame()
-                    if not existing_stock.empty:
-                        match = existing_stock[
-                            (
-                                existing_stock[prod_key].astype(str).str.lower()
-                                == p_name.lower()
-                            )
-                            & (
-                                existing_stock["gender"].astype(str).str.lower()
-                                == g_name.lower()
-                            )
-                            & (
-                                existing_stock["art_no"].astype(str).str.lower()
-                                == a_num.lower()
-                            )
-                            & (
-                                existing_stock["size"].astype(str) == s_val
-                            )
-                        ]
-
-                    if not match.empty:
-                        # Existing item -> UPDATE QTY
-                        row_id = match.iloc[0]["id"]
-                        current_q = int(match.iloc[0][qty_key])
-                        new_total_q = current_q + add_qty
-
-                        supabase.table("stock").update({
-                            qty_key: new_total_q,
-                            "price": item_price,
-                        }).eq("id", row_id).execute()
-                    else:
-                        # New item -> INSERT
-                        row_data = {
-                            "gender": g_name,
-                            "art_no": a_num,
-                            "size": s_val,
-                            "price": item_price,
-                            "created_at": get_ist_time().isoformat(),
-                        }
-                        row_data[prod_key] = p_name
-                        row_data[qty_key] = add_qty
-
-                        supabase.table("stock").insert(row_data).execute()
-
-                st.balloons()
-                st.success(
-                    "Stock processing complete! Existing items updated & new"
-                    " items added seamlessly."
-                )
-                del st.session_state["extracted_stock_data"]
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed to process stock: {e}")
