@@ -114,7 +114,7 @@ if menu == "📦 Live Stock":
         else:
             col1, col2, col3 = st.columns(3)
             with col1:
-                gender_opts = df_stock["gender"].unique()
+                gender_opts = df_stock["gender"].dropna().unique()
                 gender_filter = st.multiselect(
                     "Gender Category",
                     options=gender_opts,
@@ -122,7 +122,7 @@ if menu == "📦 Live Stock":
                     placeholder="Select Gender...",
                 )
             with col2:
-                brand_opts = df_stock["product_name"].unique()
+                brand_opts = df_stock["product_name"].dropna().unique()
                 brand_filter = st.multiselect(
                     "Brand / Product",
                     options=brand_opts,
@@ -296,8 +296,6 @@ elif menu == "🎯 Product Insights(FLD Stocks)":
             if df_stock.empty:
                 st.info("Stock inventory is empty.")
             else:
-                df_stock = format_df_dates(df_stock)
-
                 if not df_sales.empty:
                     merge_cols = ["product_name", "gender", "art_no", "size"]
                     sold_items = df_sales[merge_cols].drop_duplicates()
@@ -313,7 +311,8 @@ elif menu == "🎯 Product Insights(FLD Stocks)":
                     dead_stock = df_stock
 
                 st.warning(f"Found {len(dead_stock)} stock items with zero sales record:")
-                st.dataframe(dead_stock, use_container_width=True)
+                dead_stock_formatted = format_df_dates(dead_stock)
+                st.dataframe(dead_stock_formatted, use_container_width=True)
         except Exception as e:
             st.error(f"Error loading dead stock: {e}")
 
@@ -371,7 +370,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
             st.error("No stock available in database! Please add stock first.")
         else:
             # --- 1. Product ---
-            products_list = list(df_stock["product_name"].unique())
+            products_list = list(df_stock["product_name"].dropna().unique())
             selected_product = st.selectbox(
                 "Product",
                 options=products_list,
@@ -384,7 +383,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
             gender_list = []
             if selected_product:
                 sub_1 = df_stock[df_stock["product_name"] == selected_product]
-                gender_list = list(sub_1["gender"].unique())
+                gender_list = list(sub_1["gender"].dropna().unique())
 
             selected_gender = st.selectbox(
                 "Gender",
@@ -398,7 +397,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
             art_list = []
             if selected_product and selected_gender:
                 sub_2 = sub_1[sub_1["gender"] == selected_gender]
-                art_list = list(sub_2["art_no"].unique())
+                art_list = list(sub_2["art_no"].dropna().unique())
 
             selected_art_no = st.selectbox(
                 "Art No",
@@ -412,7 +411,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
             size_list = []
             if selected_product and selected_gender and selected_art_no:
                 sub_3 = sub_2[sub_2["art_no"] == selected_art_no]
-                size_list = list(sub_3["size"].unique())
+                size_list = list(sub_3["size"].dropna().unique())
 
             selected_size = st.selectbox(
                 "Size",
