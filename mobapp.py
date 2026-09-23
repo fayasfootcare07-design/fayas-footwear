@@ -103,7 +103,7 @@ menu = st.sidebar.radio("Go to", menu_options)
 # ---------------------------------------------------------
 # 1. LIVE STOCK STATUS
 # ---------------------------------------------------------
-if menu == "📦 Live Stock":
+elif menu == "📦 Live Stock":
     st.subheader("📦 Live Stock Inventory")
     try:
         response = supabase.table("stock").select("*").execute()
@@ -112,8 +112,6 @@ if menu == "📦 Live Stock":
         if df_stock.empty:
             st.warning("No stock data found in Supabase database.")
         else:
-            df_stock = format_df_dates(df_stock)
-            
             col1, col2, col3 = st.columns(3)
             with col1:
                 gender_opts = df_stock["gender"].unique()
@@ -144,11 +142,44 @@ if menu == "📦 Live Stock":
                     filtered_df["art_no"].astype(str).str.contains(search_art, case=False, na=False)
                 ]
 
-            st.dataframe(filtered_df, use_container_width=True)
+            # ADMIN ONLY EDITABLE TABLE
+            if st.session_state.get("admin_logged_in", False):
+                st.info("💡 **Admin Mode:** Double click on any cell (Qty, Price, Art No, etc.) to edit, then click **'💾 Save Changes to Database'** below.")
+                
+                edited_df = st.data_editor(
+                    filtered_df,
+                    key="stock_editor",
+                    num_rows="dynamic",  # Rows add/delete panna mudiyum
+                    disabled=["id", "created_at"],  # ID & Created time change panna mudiyadhu
+                    use_container_width=True
+                )
+
+                if st.button("💾 Save Changes to Database", type="primary"):
+                    try:
+                        # Database update logic
+                        for index, row in edited_df.iterrows():
+                            row_id = row.get("id")
+                            if pd.notnull(row_id):
+                                update_payload = {
+                                    "product_name": str(row["product_name"]),
+                                    "gender": str(row["gender"]),
+                                    "art_no": str(row["art_no"]),
+                                    "size": str(row["size"]),
+                                    "qty": int(row["qty"]),
+                                    "price": float(row["price"])
+                                }
+                                supabase.table("stock").update(update_payload).eq("id", row_id).execute()
+                        st.success("✅ Stock details updated successfully in Supabase!")
+                        st.rerun()
+                    except Exception as save_err:
+                        st.error(f"Error saving changes: {save_err}")
+            else:
+                # VIEW ONLY FOR NORMAL USERS
+                formatted_view = format_df_dates(filtered_df)
+                st.dataframe(formatted_view, use_container_width=True)
 
     except Exception as e:
         st.error(f"Error fetching stock: {e}")
-
 # ---------------------------------------------------------
 # 2. SALES ANALYTICS (TODAY & HISTORY)
 # ---------------------------------------------------------
