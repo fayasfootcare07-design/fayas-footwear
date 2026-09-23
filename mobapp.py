@@ -44,7 +44,6 @@ def generate_qr_code(data_str):
     return buf.getvalue()
 
 
-# --- UPDATED DATE & TIME FORMATTING FUNCTION ---
 def format_df_dates(df):
     if df.empty:
         return df
@@ -55,7 +54,6 @@ def format_df_dates(df):
             for keyword in ["created_at", "date", "time", "updated_at", "timestamp"]
         ):
             try:
-                # Convert to datetime with IST (Asia/Kolkata) timezone conversion
                 converted_series = pd.to_datetime(formatted_df[col], utc=True)
                 formatted_df[col] = (
                     converted_series.dt.tz_convert("Asia/Kolkata").dt.strftime(
@@ -64,7 +62,6 @@ def format_df_dates(df):
                 )
             except Exception:
                 try:
-                    # Fallback for standard naive datetimes without UTC/TZ metadata
                     formatted_df[col] = pd.to_datetime(
                         formatted_df[col]
                     ).dt.strftime("%d/%m/%Y %I:%M %p")
@@ -155,7 +152,6 @@ if menu == "📦 Live Stock":
                     filtered_df["art_no"].astype(str).str.contains(search_art, case=False, na=False)
                 ]
 
-            # ADMIN ONLY EDITABLE TABLE
             if st.session_state.get("admin_logged_in", False):
                 filtered_df.insert(0, "Select", False)
 
@@ -240,7 +236,7 @@ elif menu == "📊 Sales Analytics":
             )
 
             if view_type == "🔥 Today's Live Sales":
-                st.write(f"### 🗓️ Today's Sales ({today_date.strftime('%d/%b/%Y')})")
+                st.write(f"### 🗓️ Today's Sales ({today_date.strftime('%d/%m/%Y')})")
                 df_filtered = df_sales[df_sales["date_only"] == today_date].copy()
             else:
                 st.write("### 📜 Sales History")
@@ -270,7 +266,6 @@ elif menu == "📊 Sales Analytics":
                 display_cols = [c for c in df_filtered.columns if c not in ["datetime_ist", "date_only", "cost", "profit"]]
                 df_display = df_filtered[display_cols].sort_values(by="id", ascending=False)
 
-                # ADMIN DELETE CAPABILITY FOR SALES
                 if st.session_state.get("admin_logged_in", False):
                     df_display.insert(0, "Select", False)
 
@@ -292,7 +287,6 @@ elif menu == "📊 Sales Analytics":
                                 for index, row in to_delete_sales.iterrows():
                                     sale_id = row.get("id")
                                     if pd.notnull(sale_id):
-                                        # 1. Restock Qty back to stock
                                         p_name = str(row["product_name"])
                                         g_name = str(row["gender"])
                                         a_no = str(row["art_no"])
@@ -305,7 +299,6 @@ elif menu == "📊 Sales Analytics":
                                             restocked_qty = int(stk_item.get("qty", 0)) + s_qty
                                             supabase.table("stock").update({"qty": restocked_qty}).eq("id", stk_item["id"]).execute()
 
-                                        # 2. Delete Sales Record
                                         supabase.table("sales").delete().eq("id", sale_id).execute()
                                         delete_count += 1
 
@@ -331,7 +324,6 @@ elif menu == "🎯 Product Insights(FLD Stocks)":
         "📉 Low Stock Alert (≤ 2 Pairs)",
     ])
 
-    # TAB 1: Fast Selling
     with tab1:
         try:
             sales_res = supabase.table("sales").select("*").execute()
@@ -347,7 +339,6 @@ elif menu == "🎯 Product Insights(FLD Stocks)":
         except Exception as e:
             st.error(f"Error loading fast selling products: {e}")
 
-    # TAB 2: Dead Stock
     with tab2:
         try:
             stock_res = supabase.table("stock").select("*").execute()
@@ -379,7 +370,6 @@ elif menu == "🎯 Product Insights(FLD Stocks)":
         except Exception as e:
             st.error(f"Error loading dead stock: {e}")
 
-    # TAB 3: Low Stock Alert (≤ 2 Pairs)
     with tab3:
         try:
             stock_res = supabase.table("stock").select("*").execute()
@@ -432,7 +422,6 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
         if df_stock.empty:
             st.error("No stock available in database! Please add stock first.")
         else:
-            # --- 1. Product ---
             products_list = list(df_stock["product_name"].dropna().unique())
             selected_product = st.selectbox(
                 "Product",
@@ -442,7 +431,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 key="sb_product",
             )
 
-            # --- 2. Gender ---
+            sub_1 = pd.DataFrame()
             gender_list = []
             if selected_product:
                 sub_1 = df_stock[df_stock["product_name"] == selected_product]
@@ -456,9 +445,9 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 key="sb_gender",
             )
 
-            # --- 3. Art No ---
+            sub_2 = pd.DataFrame()
             art_list = []
-            if selected_product and selected_gender:
+            if selected_product and selected_gender and not sub_1.empty:
                 sub_2 = sub_1[sub_1["gender"] == selected_gender]
                 art_list = list(sub_2["art_no"].dropna().unique())
 
@@ -470,9 +459,9 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                 key="sb_art_no",
             )
 
-            # --- 4. Size ---
+            sub_3 = pd.DataFrame()
             size_list = []
-            if selected_product and selected_gender and selected_art_no:
+            if selected_product and selected_gender and selected_art_no and not sub_2.empty:
                 sub_3 = sub_2[sub_2["art_no"] == selected_art_no]
                 size_list = list(sub_3["size"].dropna().unique())
 
@@ -490,7 +479,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
             mrp_d_val = 0.0
             selected_item = None
 
-            if selected_product and selected_gender and selected_art_no and selected_size:
+            if selected_product and selected_gender and selected_art_no and selected_size and not sub_3.empty:
                 matched_rows = sub_3[sub_3["size"] == selected_size]
                 if not matched_rows.empty:
                     selected_item = matched_rows.iloc[0]
@@ -568,7 +557,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
 
                     if generate_qr_btn or submit_sale:
                         bill_details = (
-                            f"FAYAS FOOTWEAR\nDate: {sale_date.strftime('%d/%b/%y')}\n"
+                            f"FAYAS FOOTWEAR\nDate: {sale_date.strftime('%d/%m/%Y')}\n"
                             f"Item: {selected_product} ({selected_gender})\n"
                             f"Art: {selected_art_no} | Size: {selected_size}\n"
                             f"Qty: {sell_qty} x ₹{selling_price}\n"
