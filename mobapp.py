@@ -144,35 +144,59 @@ if menu == "📦 Live Stock":
 
             # ADMIN ONLY EDITABLE TABLE
             if st.session_state.get("admin_logged_in", False):
-                #st.info("💡 **Admin Mode:** Double click on any cell (Qty, Price, Art No, etc.) to edit, then click **'💾 Save Changes to Database'** below.")
-                
+                # Custom 'Select' column for deleting items
+                filtered_df.insert(0, "Select", False)
+
                 edited_df = st.data_editor(
                     filtered_df,
                     key="stock_editor",
-                    num_rows="dynamic",  # Rows add/delete panna mudiyum
-                    disabled=["id", "created_at"],  # ID & Created time change panna mudiyadhu
+                    num_rows="dynamic",
+                    disabled=["id", "created_at"],
                     use_container_width=True
                 )
 
-                if st.button("💾 Save Changes", type="primary"):
-                    try:
-                        # Database update logic
-                        for index, row in edited_df.iterrows():
-                            row_id = row.get("id")
-                            if pd.notnull(row_id):
-                                update_payload = {
-                                    "product_name": str(row["product_name"]),
-                                    "gender": str(row["gender"]),
-                                    "art_no": str(row["art_no"]),
-                                    "size": str(row["size"]),
-                                    "qty": int(row["qty"]),
-                                    "price": float(row["price"])
-                                }
-                                supabase.table("stock").update(update_payload).eq("id", row_id).execute()
-                        st.success("✅ Stock details updated successfully in Supabase!")
-                        st.rerun()
-                    except Exception as save_err:
-                        st.error(f"Error saving changes: {save_err}")
+                col_b1, col_b2 = st.columns([1, 1])
+
+                with col_b1:
+                    if st.button("💾 Save Changes", type="primary"):
+                        try:
+                            # Database update logic
+                            for index, row in edited_df.iterrows():
+                                row_id = row.get("id")
+                                if pd.notnull(row_id):
+                                    update_payload = {
+                                        "product_name": str(row["product_name"]),
+                                        "gender": str(row["gender"]),
+                                        "art_no": str(row["art_no"]),
+                                        "size": str(row["size"]),
+                                        "qty": int(row["qty"]),
+                                        "price": float(row["price"])
+                                    }
+                                    supabase.table("stock").update(update_payload).eq("id", row_id).execute()
+                            st.success("✅ Stock details updated successfully in Supabase!")
+                            st.rerun()
+                        except Exception as save_err:
+                            st.error(f"Error saving changes: {save_err}")
+
+                with col_b2:
+                    if st.button("🗑️ Delete Selected Items", type="secondary"):
+                        # Select rows where 'Select' column is checked (True)
+                        to_delete_df = edited_df[edited_df["Select"] == True]
+
+                        if to_delete_df.empty:
+                            st.warning("⚠️ No items selected! Please tick the 'Select' box first.")
+                        else:
+                            try:
+                                delete_count = 0
+                                for index, row in to_delete_df.iterrows():
+                                    row_id = row.get("id")
+                                    if pd.notnull(row_id):
+                                        supabase.table("stock").delete().eq("id", row_id).execute()
+                                        delete_count += 1
+                                st.success(f"🗑️ Successfully deleted {delete_count} items from database!")
+                                st.rerun()
+                            except Exception as delete_err:
+                                st.error(f"Error deleting items: {delete_err}")
             else:
                 # VIEW ONLY FOR NORMAL USERS
                 formatted_view = format_df_dates(filtered_df)
