@@ -8,6 +8,7 @@ from PIL import Image
 import qrcode
 from supabase import Client, create_client
 import streamlit as st
+import streamlit.components.v1 as components
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -363,7 +364,6 @@ elif menu == "🎯 Product Insights (Fast & Dead Stock)":
                 st.dataframe(dead_stock, use_container_width=True)
         except Exception as e:
             st.error(f"Error loading dead stock: {e}")
-import streamlit.components.v1 as components
 
 # ---------------------------------------------------------
 # 4. QUICK SALE ENTRY (WITH ENTER KEY AUTO FOCUS JUMP)
@@ -528,7 +528,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     sale_res = (
                         supabase.table("sales").select("*").limit(1).execute()
                     )
-                    s_cols = list(sale_res.data[0].keys()) if sale_res.data else []
+                    s_cols = list(sale_res.data[0].keys()) if (sale_res.data and len(sale_res.data) > 0) else []
                     s_qty_key = "quantity" if "quantity" in s_cols else "qty"
                     s_prod_key = "product" if "product" in s_cols else "product_name"
 
@@ -545,6 +545,8 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     if "payment_mode" in s_cols or "payment" in s_cols:
                         pay_key = "payment_mode" if "payment_mode" in s_cols else "payment"
                         sale_data[pay_key] = payment_mode
+                    else:
+                        sale_data["payment_mode"] = payment_mode
 
                     if submit_sale:
                         supabase.table("sales").insert(sale_data).execute()
@@ -570,7 +572,9 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         st.image(qr_img, caption="Scan QR for Digital Bill Receipt")
 
     except Exception as e:
-        st.error(f"Error during quick sale: {e}")# ---------------------------------------------------------
+        st.error(f"Error during quick sale: {e}")
+
+# ---------------------------------------------------------
 # 5. STOCK UPDATE / NEW ENTRY (MANUAL)
 # ---------------------------------------------------------
 elif (
