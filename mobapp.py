@@ -144,7 +144,7 @@ if menu == "📦 Live Stock":
 
             # ADMIN ONLY EDITABLE TABLE
             if st.session_state.get("admin_logged_in", False):
-                st.info("💡 **Admin Mode:** Double click on any cell (Qty, Price, Art No, etc.) to edit, then click **'💾 Save Changes to Database'** below.")
+                #st.info("💡 **Admin Mode:** Double click on any cell (Qty, Price, Art No, etc.) to edit, then click **'💾 Save Changes to Database'** below.")
                 
                 edited_df = st.data_editor(
                     filtered_df,
