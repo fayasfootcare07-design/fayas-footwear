@@ -646,24 +646,18 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
     with tab_excel:
         st.write("### 📤 Upload Excel or CSV File")
 
-        # Default Sample Template Data
-        default_template_data = pd.DataFrame([
+        # Sample Template Dataframe
+        default_template_df = pd.DataFrame([
             {"product_name": "Walkaroo", "gender": "Gents", "art_no": "BX 2618", "size": "7", "qty": 10, "mrp_og": 399.00, "wp": 220.00, "mrp_d": 399.00},
-            {"product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00},
-            {"product_name": "UKC-Pride", "gender": "Ladies", "art_no": "GP-1331", "size": "6", "qty": 15, "mrp_og": 299.00, "wp": 160.00, "mrp_d": 299.00},
-            {"product_name": "Gel-lite", "gender": "Gents", "art_no": "P27", "size": "8", "qty": 8, "mrp_og": 1100.00, "wp": 650.00, "mrp_d": 1100.00},
-            {"product_name": "Gsc Metro", "gender": "Kids (B)", "art_no": "2704", "size": "9", "qty": 20, "mrp_og": 350.00, "wp": 190.00, "mrp_d": 350.00}
+            {"product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00}
         ])
 
-        # Blank Empty Template
-        empty_template_data = pd.DataFrame(columns=[
+        empty_template_df = pd.DataFrame(columns=[
             "product_name", "gender", "art_no", "size", "qty", "mrp_og", "wp", "mrp_d"
         ])
 
-        # Generate CSV byte data for Sample Download (No openpyxl error dependency)
-        csv_template_bytes = default_template_data.to_csv(index=False).encode('utf-8')
+        csv_template_bytes = default_template_df.to_csv(index=False).encode('utf-8')
 
-        # Top Section Controls
         col_up, col_dl = st.columns([3, 1])
         with col_up:
             uploaded_file = st.file_uploader("Choose an Excel or CSV file", type=["xlsx", "csv"])
@@ -677,94 +671,76 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 use_container_width=True
             )
 
+        # Handle File Upload
         if uploaded_file is not None:
             try:
                 if uploaded_file.name.endswith(".csv"):
-                    df_raw = pd.read_csv(uploaded_file, header=None)
+                    df_upload = pd.read_csv(uploaded_file)
                 else:
-                    df_raw = pd.read_excel(uploaded_file, header=None)
+                    df_upload = pd.read_excel(uploaded_file)
 
-                header_idx = 0
-                for idx, row in df_raw.iterrows():
-                    row_str = " ".join(row.dropna().astype(str)).lower()
-                    if "product" in row_str or "art" in row_str:
-                        header_idx = idx
-                        break
-
-                if uploaded_file.name.endswith(".csv"):
-                    df_upload = pd.read_csv(uploaded_file, skiprows=header_idx)
-                else:
-                    df_upload = pd.read_excel(uploaded_file, skiprows=header_idx)
-
+                # Standardize column headers
                 df_upload.columns = [str(col).strip().lower().replace("-", "_").replace(".", "_") for col in df_upload.columns]
 
-                col_mapping = {
-                    's_no': 's_no', 'sno': 's_no',
-                    'product_name': 'product_name', 'productname': 'product_name', 'product': 'product_name',
-                    'gender': 'gender',
-                    'art_no': 'art_no', 'artno': 'art_no', 'art': 'art_no',
-                    'size': 'size',
-                    'qty': 'qty', 'quantity': 'qty',
-                    'mrp': 'mrp_og', 'mrp_og': 'mrp_og', 'original_mrp': 'mrp_og',
-                    'w_p': 'wp', 'wp': 'wp', 'wholesale': 'wp', 'wholesale_price': 'wp',
-                    'duplicate_mrp': 'mrp_d', 'mrp_d': 'mrp_d'
-                }
+                # Fill Empty / NaN Values safely
+                df_upload["product_name"] = df_upload.get("product_name", "").fillna("").astype(str)
+                df_upload["gender"] = df_upload.get("gender", "Gents").fillna("Gents").astype(str)
+                df_upload["art_no"] = df_upload.get("art_no", "").fillna("").astype(str)
+                df_upload["size"] = df_upload.get("size", "").fillna("0").astype(str)
+                df_upload["qty"] = pd.to_numeric(df_upload.get("qty", 1), errors='coerce').fillna(1).astype(int)
+                df_upload["mrp_og"] = pd.to_numeric(df_upload.get("mrp_og", 0.0), errors='coerce').fillna(0.0).astype(float)
                 
-                renamed_cols = {}
-                for col in df_upload.columns:
-                    clean_c = str(col).strip()
-                    renamed_cols[col] = col_mapping.get(clean_c, clean_c)
-                df_upload.rename(columns=renamed_cols, inplace=True)
+                # Handling empty 'wp' and 'mrp_d' columns without breaking
+                if "wp" in df_upload.columns:
+                    df_upload["wp"] = pd.to_numeric(df_upload["wp"], errors='coerce').fillna(0.0).astype(float)
+                else:
+                    df_upload["wp"] = 0.0
 
-                cols_to_drop = [c for c in ["s_no", "sno", "Delete_Row", "delete_row", "Delete", "delete"] if c in df_upload.columns]
-                if cols_to_drop:
-                    df_upload.drop(columns=cols_to_drop, inplace=True)
+                if "mrp_d" in df_upload.columns:
+                    df_upload["mrp_d"] = pd.to_numeric(df_upload["mrp_d"], errors='coerce').fillna(df_upload["mrp_og"]).astype(float)
+                else:
+                    df_upload["mrp_d"] = df_upload["mrp_og"]
 
-                if "product_name" in df_upload.columns:
-                    df_upload = df_upload[
-                        ~df_upload["product_name"].astype(str).str.lower().str.strip().isin(["total", "sum", "grand total", "none", "nan", ""])
-                    ]
-
-                st.session_state.stock_editor_data = df_upload.to_dict('records')
+                st.session_state.master_stock_df = df_upload
 
             except Exception as file_err:
                 st.error(f"Error reading file: {file_err}")
 
-        # Initialize Data safely using python dict/list to avoid Streamlit Editor Crash
-        if "stock_editor_data" not in st.session_state:
-            st.session_state.stock_editor_data = default_template_data.to_dict('records')
+        # Initialize Session State DataFrame Safely
+        if "master_stock_df" not in st.session_state or not isinstance(st.session_state.master_stock_df, pd.DataFrame):
+            st.session_state.master_stock_df = default_template_df.copy()
 
         st.write("### 🔍 Live Editable Table Template")
         st.caption("💡 Direct-a values-a change panni `Sync` pannaலாம் or new Excel upload pannaலாம்.")
 
-        # Editable Table Rendering (Crash-Proof)
+        # Display Data Editor
         updated_df = st.data_editor(
-            st.session_state.stock_editor_data,
+            st.session_state.master_stock_df,
             column_config={
-                "product_name": st.column_config.TextColumn("product_name"),
-                "gender": st.column_config.TextColumn("gender"),
-                "art_no": st.column_config.TextColumn("art_no"),
-                "size": st.column_config.TextColumn("size"),
-                "qty": st.column_config.NumberColumn("qty"),
+                "product_name": st.column_config.TextColumn("Product Name"),
+                "gender": st.column_config.TextColumn("Gender"),
+                "art_no": st.column_config.TextColumn("Art No"),
+                "size": st.column_config.TextColumn("Size"),
+                "qty": st.column_config.NumberColumn("Qty", step=1),
                 "mrp_og": st.column_config.NumberColumn("Original MRP", format="₹%.2f"),
                 "wp": st.column_config.NumberColumn("Wholesale Price", format="₹%.2f"),
                 "mrp_d": st.column_config.NumberColumn("Duplicate MRP", format="₹%.2f"),
             },
             num_rows="dynamic",
-            use_container_width=True
+            use_container_width=True,
+            key="excel_stock_editor_key"
         )
 
-        # Action Buttons
         col_btn1, col_btn2, col_spacer = st.columns([1, 1, 2])
         
         with col_btn1:
-            if st.button("🗑️ Reset Table (Clear All)", type="secondary", use_container_width=True):
-                st.session_state.stock_editor_data = empty_template_data.to_dict('records')
+            if st.button("🗑️ Reset Table", type="secondary", use_container_width=True):
+                st.session_state.master_stock_df = empty_template_df.copy()
                 st.rerun()
 
         with col_btn2:
-            if st.button("📋 Load Default Template", type="secondary", use_container_width=True):
-                st.session_state.stock_editor_data = default_template_data.to_dict('records')
+            if st.button("📋 Load Sample Data", type="secondary", use_container_width=True):
+                st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
 
         st.divider()
@@ -785,45 +761,20 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 for idx, row in final_upload_df.iterrows():
                     try:
                         p_name = str(row.get("product_name", "")).strip()
-                        if not p_name or p_name.lower() in ["total", "nan", "none", "grand total", "sum", ""]:
+                        if not p_name or p_name.lower() in ["total", "nan", "none", ""]:
                             continue
 
-                        g_raw = str(row.get("gender", "")).strip().lower()
-                        if g_raw in ['g', 'gents', 'm', 'male']:
-                            g_name = "Gents"
-                        elif g_raw in ['l', 'ladies', 'f', 'female']:
-                            g_name = "Ladies"
-                        elif g_raw in ['kb', 'kids b', 'kids (b)']:
-                            g_name = "Kids (B)"
-                        elif g_raw in ['kg', 'kids g', 'kids (g)']:
-                            g_name = "Kids (G)"
-                        else:
-                            g_name = g_raw.capitalize() if g_raw and g_raw != "nan" else "Gents"
-
+                        g_name = str(row.get("gender", "Gents")).strip()
                         a_no = str(row.get("art_no", "")).strip()
                         s_size = str(row.get("size", "")).strip()
-                        if not a_no or a_no.lower() in ["nan", "none", ""]:
+                        
+                        if not a_no:
                             continue
 
-                        try:
-                            q_val = int(float(row.get("qty", 1)))
-                        except:
-                            q_val = 1
-                            
-                        try:
-                            m_og = float(row.get("mrp_og", 0.0))
-                        except:
-                            m_og = 0.0
-                            
-                        try:
-                            w_val = float(row.get("wp", 0.0))
-                        except:
-                            w_val = 0.0
-                            
-                        try:
-                            m_d = float(row.get("mrp_d", 0.0)) if pd.notnull(row.get("mrp_d")) else m_og
-                        except:
-                            m_d = m_og
+                        q_val = int(row.get("qty", 1))
+                        m_og = float(row.get("mrp_og", 0.0))
+                        w_val = float(row.get("wp", 0.0))
+                        m_d = float(row.get("mrp_d", m_og))
 
                         existing = pd.DataFrame()
                         if not df_all.empty:
@@ -864,5 +815,5 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.success(f"🎉 Successfully imported {success_count} stock items!")
                 if error_count > 0:
                     st.warning(f"⚠️ Skipped {error_count} invalid rows.")
-                st.session_state.stock_editor_data = default_template_data.to_dict('records')
+                st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
