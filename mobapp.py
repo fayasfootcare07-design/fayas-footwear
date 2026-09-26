@@ -641,12 +641,13 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                             st.success("New Stock Item Created Successfully!")
                     except Exception as e:
                         st.error(f"Failed to add stock: {e}")
+
 # --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
     with tab_excel:
         st.write("### 📤 Upload Excel or CSV File")
         uploaded_file = st.file_uploader("Choose an Excel or CSV file", type=["xlsx", "csv"])
 
-        # Default Standard Template Data (Cleaned without Delete column)
+        # Default Clean Template Data (NO Delete column)
         default_template_data = pd.DataFrame([
             {"product_name": "Walkaroo", "gender": "Gents", "art_no": "BX 2618", "size": "7", "qty": 10, "mrp_og": 399.00, "wp": 220.00, "mrp_d": 399.00},
             {"product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00},
@@ -657,13 +658,11 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
 
         if uploaded_file is not None:
             try:
-                # 1. Read file raw
                 if uploaded_file.name.endswith(".csv"):
                     df_raw = pd.read_csv(uploaded_file, header=None)
                 else:
                     df_raw = pd.read_excel(uploaded_file, header=None)
 
-                # 2. Smart header row detection
                 header_idx = 0
                 for idx, row in df_raw.iterrows():
                     row_str = " ".join(row.dropna().astype(str)).lower()
@@ -671,16 +670,13 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         header_idx = idx
                         break
 
-                # 3. Reload DataFrame with correct header row
                 if uploaded_file.name.endswith(".csv"):
                     df_upload = pd.read_csv(uploaded_file, skiprows=header_idx)
                 else:
                     df_upload = pd.read_excel(uploaded_file, skiprows=header_idx)
 
-                # Clean header column names
                 df_upload.columns = [str(col).strip().lower().replace("-", "_").replace(".", "_") for col in df_upload.columns]
 
-                # Map column names
                 col_mapping = {
                     's_no': 's_no', 'sno': 's_no',
                     'product_name': 'product_name', 'productname': 'product_name', 'product': 'product_name',
@@ -699,35 +695,36 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     renamed_cols[col] = col_mapping.get(clean_c, clean_c)
                 df_upload.rename(columns=renamed_cols, inplace=True)
 
-                # Remove unnecessary columns
-                if "s_no" in df_upload.columns:
-                    df_upload.drop(columns=["s_no"], inplace=True)
-
-                if "Delete_Row" in df_upload.columns:
-                    df_upload.drop(columns=["Delete_Row"], inplace=True)
+                # FORCIBLY REMOVE UNWANTED COLUMNS
+                cols_to_drop = [c for c in ["s_no", "sno", "Delete_Row", "delete_row", "Delete", "delete"] if c in df_upload.columns]
+                if cols_to_drop:
+                    df_upload.drop(columns=cols_to_drop, inplace=True)
 
                 if "product_name" in df_upload.columns:
                     df_upload = df_upload[
                         ~df_upload["product_name"].astype(str).str.lower().str.strip().isin(["total", "sum", "grand total", "none", "nan", ""])
                     ]
 
-                # Store uploaded data in session
-                st.session_state.edited_df = df_upload
+                st.session_state.clean_stock_df = df_upload
                 st.session_state.file_name = uploaded_file.name
 
             except Exception as file_err:
                 st.error(f"Error reading file: {file_err}")
 
-        # If no file uploaded, load Clean Standard Template
-        if "edited_df" not in st.session_state or st.session_state.edited_df is None:
-            st.session_state.edited_df = default_template_data.copy()
+        # Always default to Clean Template if no new file is uploaded
+        if "clean_stock_df" not in st.session_state or st.session_state.clean_stock_df is None:
+            st.session_state.clean_stock_df = default_template_data.copy()
+
+        # ENSURE DELETE COLUMN IS REMOVED FROM SESSION STATE AS WELL
+        if "Delete_Row" in st.session_state.clean_stock_df.columns:
+            st.session_state.clean_stock_df.drop(columns=["Delete_Row"], inplace=True)
 
         st.write("### 🔍 Live Editable Table Template")
         st.caption("💡 Direct-a values-a change panni `Sync` pannaலாம் or new Excel upload pannaலாம்.")
 
-        # Display Dynamic Table Editor
+        # Editable Table Rendering
         updated_df = st.data_editor(
-            st.session_state.edited_df,
+            st.session_state.clean_stock_df,
             column_config={
                 "product_name": st.column_config.TextColumn("product_name"),
                 "gender": st.column_config.TextColumn("gender"),
@@ -740,12 +737,12 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             },
             num_rows="dynamic",
             use_container_width=True,
-            key="data_editor_key"
+            key="clean_editor_key"
         )
 
         # Reset Button Only
         if st.button("🔄 Reset to Default Template", type="secondary"):
-            st.session_state.edited_df = default_template_data.copy()
+            st.session_state.clean_stock_df = default_template_data.copy()
             st.session_state.pop("file_name", None)
             st.rerun()
 
@@ -847,5 +844,5 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.success(f"🎉 Successfully imported {success_count} stock items!")
                 if error_count > 0:
                     st.warning(f"⚠️ Skipped {error_count} invalid rows.")
-                st.session_state.edited_df = default_template_data.copy()
+                st.session_state.clean_stock_df = default_template_data.copy()
                 st.rerun()
