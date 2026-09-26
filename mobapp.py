@@ -671,7 +671,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 use_container_width=True
             )
 
-        # Handle File Upload
+# Handle File Upload
         if uploaded_file is not None:
             try:
                 if uploaded_file.name.endswith(".csv"):
@@ -682,26 +682,55 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 # Standardize column headers
                 df_upload.columns = [str(col).strip().lower().replace("-", "_").replace(".", "_") for col in df_upload.columns]
 
-                # Fill Empty / NaN Values safely
+                # Flexible Column Mapping
+                col_mapping = {
+                    'product_name': 'product_name', 'productname': 'product_name', 'product': 'product_name',
+                    'gender': 'gender',
+                    'art_no': 'art_no', 'artno': 'art_no', 'art': 'art_no',
+                    'size': 'size',
+                    'qty': 'qty', 'quantity': 'qty',
+                    'mrp': 'mrp_og', 'mrp_og': 'mrp_og', 'original_mrp': 'mrp_og',
+                    'w_p': 'wp', 'wp': 'wp', 'wholesale': 'wp', 'wholesale_price': 'wp',
+                    'duplicate_mrp': 'mrp_d', 'mrp_d': 'mrp_d'
+                }
+
+                renamed_cols = {}
+                for col in df_upload.columns:
+                    clean_c = str(col).strip()
+                    renamed_cols[col] = col_mapping.get(clean_c, clean_c)
+                df_upload.rename(columns=renamed_cols, inplace=True)
+
+                # Standard Data Cleaning
                 df_upload["product_name"] = df_upload.get("product_name", "").fillna("").astype(str)
                 df_upload["gender"] = df_upload.get("gender", "Gents").fillna("Gents").astype(str)
                 df_upload["art_no"] = df_upload.get("art_no", "").fillna("").astype(str)
-                df_upload["size"] = df_upload.get("size", "").fillna("0").astype(str)
+                df_upload["size"] = df_upload.get("size", "0").fillna("0").astype(str)
                 df_upload["qty"] = pd.to_numeric(df_upload.get("qty", 1), errors='coerce').fillna(1).astype(int)
                 df_upload["mrp_og"] = pd.to_numeric(df_upload.get("mrp_og", 0.0), errors='coerce').fillna(0.0).astype(float)
-                
-                # Handling empty 'wp' and 'mrp_d' columns without breaking
-                if "wp" in df_upload.columns:
-                    df_upload["wp"] = pd.to_numeric(df_upload["wp"], errors='coerce').fillna(0.0).astype(float)
-                else:
-                    df_upload["wp"] = 0.0
 
-                if "mrp_d" in df_upload.columns:
-                    df_upload["mrp_d"] = pd.to_numeric(df_upload["mrp_d"], errors='coerce').fillna(df_upload["mrp_og"]).astype(float)
-                else:
-                    df_upload["mrp_d"] = df_upload["mrp_og"]
+                # Dynamic Calculation Logic for Wholesale Price (wp = MRP - 33%)
+                def process_wp(row):
+                    val = row.get("wp")
+                    if pd.notnull(val) and str(val).strip() != "" and float(val) > 0:
+                        return round(float(val), 2)
+                    mrp = float(row.get("mrp_og", 0.0))
+                    return round(mrp * (1 - 0.33), 2)
+
+                # Dynamic Calculation Logic for Duplicate MRP (mrp_d = MRP + 50 RS)
+                def process_mrp_d(row):
+                    val = row.get("mrp_d")
+                    if pd.notnull(val) and str(val).strip() != "" and float(val) > 0:
+                        return round(float(val), 2)
+                    mrp = float(row.get("mrp_og", 0.0))
+                    return round(mrp + 50.0, 2)
+
+                df_upload["wp"] = df_upload.apply(process_wp, axis=1)
+                df_upload["mrp_d"] = df_upload.apply(process_mrp_d, axis=1)
 
                 st.session_state.master_stock_df = df_upload
+
+            except Exception as file_err:
+                st.error(f"Error reading file: {file_err}")
 
             except Exception as file_err:
                 st.error(f"Error reading file: {file_err}")
