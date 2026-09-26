@@ -646,7 +646,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
     with tab_excel:
         st.write("### 📤 Upload Excel or CSV File")
 
-        # Default Clean Sample Template Data
+        # Default Sample Template Data
         default_template_data = pd.DataFrame([
             {"product_name": "Walkaroo", "gender": "Gents", "art_no": "BX 2618", "size": "7", "qty": 10, "mrp_og": 399.00, "wp": 220.00, "mrp_d": 399.00},
             {"product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00},
@@ -655,29 +655,25 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             {"product_name": "Gsc Metro", "gender": "Kids (B)", "art_no": "2704", "size": "9", "qty": 20, "mrp_og": 350.00, "wp": 190.00, "mrp_d": 350.00}
         ])
 
-        # Blank Empty Template Structure
+        # Blank Empty Template
         empty_template_data = pd.DataFrame(columns=[
             "product_name", "gender", "art_no", "size", "qty", "mrp_og", "wp", "mrp_d"
         ])
 
-        # Convert template data to Excel byte stream for download
-        import io
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            default_template_data.to_excel(writer, index=False, sheet_name='Template')
-        template_bytes = buffer.getvalue()
+        # Generate CSV byte data for Sample Download (No openpyxl error dependency)
+        csv_template_bytes = default_template_data.to_csv(index=False).encode('utf-8')
 
-        # Top Bar Buttons (File Uploader + Template Download)
+        # Top Section Controls
         col_up, col_dl = st.columns([3, 1])
         with col_up:
             uploaded_file = st.file_uploader("Choose an Excel or CSV file", type=["xlsx", "csv"])
         with col_dl:
             st.write("##")
             st.download_button(
-                label="📥 Download Sample Excel Template",
-                data=template_bytes,
-                file_name="fayas_footwear_stock_template.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                label="📥 Download Sample CSV",
+                data=csv_template_bytes,
+                file_name="fayas_footwear_stock_template.csv",
+                mime="text/csv",
                 use_container_width=True
             )
 
@@ -729,25 +725,21 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         ~df_upload["product_name"].astype(str).str.lower().str.strip().isin(["total", "sum", "grand total", "none", "nan", ""])
                     ]
 
-                st.session_state.clean_stock_df = df_upload
-                st.session_state.file_name = uploaded_file.name
+                st.session_state.stock_editor_data = df_upload.to_dict('records')
 
             except Exception as file_err:
                 st.error(f"Error reading file: {file_err}")
 
-        # Default initialization
-        if "clean_stock_df" not in st.session_state or st.session_state.clean_stock_df is None:
-            st.session_state.clean_stock_df = default_template_data.copy()
-
-        if "Delete_Row" in st.session_state.clean_stock_df.columns:
-            st.session_state.clean_stock_df.drop(columns=["Delete_Row"], inplace=True)
+        # Initialize Data safely using python dict/list to avoid Streamlit Editor Crash
+        if "stock_editor_data" not in st.session_state:
+            st.session_state.stock_editor_data = default_template_data.to_dict('records')
 
         st.write("### 🔍 Live Editable Table Template")
         st.caption("💡 Direct-a values-a change panni `Sync` pannaலாம் or new Excel upload pannaலாம்.")
 
-        # Editable Table Rendering
+        # Editable Table Rendering (Crash-Proof)
         updated_df = st.data_editor(
-            st.session_state.clean_stock_df,
+            st.session_state.stock_editor_data,
             column_config={
                 "product_name": st.column_config.TextColumn("product_name"),
                 "gender": st.column_config.TextColumn("gender"),
@@ -759,30 +751,27 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 "mrp_d": st.column_config.NumberColumn("Duplicate MRP", format="₹%.2f"),
             },
             num_rows="dynamic",
-            use_container_width=True,
-            key="clean_editor_key"
+            use_container_width=True
         )
 
-        # SEPARATE BUTTONS WITH SEPARATE USE CASES
+        # Action Buttons
         col_btn1, col_btn2, col_spacer = st.columns([1, 1, 2])
         
         with col_btn1:
             if st.button("🗑️ Reset Table (Clear All)", type="secondary", use_container_width=True):
-                st.session_state.clean_stock_df = empty_template_data.copy()
-                st.session_state.pop("file_name", None)
+                st.session_state.stock_editor_data = empty_template_data.to_dict('records')
                 st.rerun()
 
         with col_btn2:
             if st.button("📋 Load Default Template", type="secondary", use_container_width=True):
-                st.session_state.clean_stock_df = default_template_data.copy()
-                st.session_state.pop("file_name", None)
+                st.session_state.stock_editor_data = default_template_data.to_dict('records')
                 st.rerun()
 
         st.divider()
 
         # Database Sync Button
         if st.button("🚀 Upload & Sync All to Database", type="primary"):
-            final_upload_df = updated_df.copy()
+            final_upload_df = pd.DataFrame(updated_df)
             
             if final_upload_df.empty:
                 st.warning("Table kaaliyaa irukku!")
@@ -875,5 +864,5 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.success(f"🎉 Successfully imported {success_count} stock items!")
                 if error_count > 0:
                     st.warning(f"⚠️ Skipped {error_count} invalid rows.")
-                st.session_state.clean_stock_df = default_template_data.copy()
+                st.session_state.stock_editor_data = default_template_data.to_dict('records')
                 st.rerun()
