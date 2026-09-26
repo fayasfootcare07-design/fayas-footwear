@@ -574,66 +574,163 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
         st.error(f"Error during quick sale: {e}")
 
 # ---------------------------------------------------------
-# 5. STOCK UPDATE / NEW ENTRY (MANUAL)
+# 5. STOCK UPDATE / NEW ENTRY (MANUAL & BULK EXCEL IMPORT)
 # ---------------------------------------------------------
 elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_in"]:
-    st.subheader("📝 Manual Stock Entry / Add New Items")
-    with st.form("manual_stock_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            product_name = st.text_input("Brand / Product Name (e.g., Walkaroo)")
-            gender = st.selectbox("Gender", ["Gents", "Ladies", "Kids (B)", "Kids (G)"])
-            art_no = st.text_input("Art No (e.g., W-102)")
-            size = st.text_input("Size (e.g., 7 or 8)")
-        with col2:
-            qty = st.number_input("Quantity", min_value=1, value=12)
-            mrp_og = st.number_input("Original MRP (mrp_og)", min_value=0.0, value=500.0)
-            wp = st.number_input("Wholesale Price (wp)", min_value=0.0, value=250.0)
-            mrp_d = st.number_input("Duplicate MRP (mrp_d)", min_value=0.0, value=350.0)
+    st.subheader("📝 Stock Update & Bulk Excel Import")
 
-        submit_stock = st.form_submit_button("💾 Save / Update Stock")
+    tab_manual, tab_excel = st.tabs(["✍️ Single Manual Entry", "📁 Bulk Excel / CSV Import"])
 
-        if submit_stock:
-            if not product_name or not art_no or not size:
-                st.error("Please fill all fields!")
-            else:
-                try:
-                    all_stock = supabase.table("stock").select("*").execute()
-                    df_all = pd.DataFrame(all_stock.data) if all_stock.data else pd.DataFrame()
+    # --- TAB 1: SINGLE MANUAL ENTRY ---
+    with tab_manual:
+        with st.form("manual_stock_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                product_name = st.text_input("Brand / Product Name (e.g., Walkaroo)")
+                gender = st.selectbox("Gender", ["Gents", "Ladies", "Kids (B)", "Kids (G)"])
+                art_no = st.text_input("Art No (e.g., W-102)")
+                size = st.text_input("Size (e.g., 7 or 8)")
+            with col2:
+                qty = st.number_input("Quantity", min_value=1, value=12)
+                mrp_og = st.number_input("Original MRP (mrp_og)", min_value=0.0, value=500.0)
+                wp = st.number_input("Wholesale Price (wp)", min_value=0.0, value=250.0)
+                mrp_d = st.number_input("Duplicate MRP (mrp_d)", min_value=0.0, value=350.0)
 
-                    existing = pd.DataFrame()
-                    if not df_all.empty:
-                        existing = df_all[
-                            (df_all["product_name"].astype(str).str.lower() == product_name.strip().lower())
-                            & (df_all["gender"].astype(str).str.lower() == gender.strip().lower())
-                            & (df_all["art_no"].astype(str).str.lower() == art_no.strip().lower())
-                            & (df_all["size"].astype(str) == str(size).strip())
-                        ]
+            submit_stock = st.form_submit_button("💾 Save / Update Stock")
 
-                    if not existing.empty:
-                        existing_row = existing.iloc[0]
-                        updated_qty = int(existing_row["qty"]) + int(qty)
-                        supabase.table("stock").update({
-                            "qty": updated_qty,
-                            "mrp_og": float(mrp_og),
-                            "wp": float(wp),
-                            "mrp_d": float(mrp_d),
-                        }).eq("id", existing_row["id"]).execute()
-                        st.success(f"Stock Updated! Added {qty} pairs to existing item. Total: {updated_qty}")
+            if submit_stock:
+                if not product_name or not art_no or not size:
+                    st.error("Please fill all required fields!")
+                else:
+                    try:
+                        all_stock = supabase.table("stock").select("*").execute()
+                        df_all = pd.DataFrame(all_stock.data) if all_stock.data else pd.DataFrame()
+
+                        existing = pd.DataFrame()
+                        if not df_all.empty:
+                            existing = df_all[
+                                (df_all["product_name"].astype(str).str.lower() == product_name.strip().lower())
+                                & (df_all["gender"].astype(str).str.lower() == gender.strip().lower())
+                                & (df_all["art_no"].astype(str).str.lower() == art_no.strip().lower())
+                                & (df_all["size"].astype(str) == str(size).strip())
+                            ]
+
+                        if not existing.empty:
+                            existing_row = existing.iloc[0]
+                            updated_qty = int(existing_row["qty"]) + int(qty)
+                            supabase.table("stock").update({
+                                "qty": updated_qty,
+                                "mrp_og": float(mrp_og),
+                                "wp": float(wp),
+                                "mrp_d": float(mrp_d),
+                            }).eq("id", existing_row["id"]).execute()
+                            st.success(f"Stock Updated! Added {qty} pairs to existing item. Total: {updated_qty}")
+                        else:
+                            payload = {
+                                "product_name": product_name.strip(),
+                                "gender": gender,
+                                "art_no": art_no.strip(),
+                                "size": str(size).strip(),
+                                "qty": int(qty),
+                                "mrp_og": float(mrp_og),
+                                "wp": float(wp),
+                                "mrp_d": float(mrp_d),
+                                "created_at": get_ist_time().isoformat(),
+                            }
+                            supabase.table("stock").insert(payload).execute()
+                            st.success("New Stock Item Created Successfully!")
+                    except Exception as e:
+                        st.error(f"Failed to add stock: {e}")
+
+    # --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
+    with tab_excel:
+        st.write("### 📤 Upload Excel or CSV File")
+        st.info("Excel File Columns Mode: `product_name`, `gender`, `art_no`, `size`, `qty`, `mrp_og`, `wp`, `mrp_d`")
+
+        uploaded_file = st.file_uploader("Choose an Excel or CSV file", type=["xlsx", "csv"])
+
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.name.endswith(".csv"):
+                    df_upload = pd.read_csv(uploaded_file)
+                else:
+                    df_upload = pd.read_excel(uploaded_file)
+
+                st.write("### 🔍 Preview & Edit Uploaded Data")
+                st.caption("Double-click on any cell below to make corrections before saving to database!")
+
+                # Live Interactive Table Editor
+                edited_excel_df = st.data_editor(
+                    df_upload,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    key="excel_editor"
+                )
+
+                if st.button("🚀 Upload & Sync All to Database", type="primary"):
+                    if edited_excel_df.empty:
+                        st.warning("Uploaded table is empty!")
                     else:
-                        payload = {
-                            "product_name": product_name.strip(),
-                            "gender": gender,
-                            "art_no": art_no.strip(),
-                            "size": str(size).strip(),
-                            "qty": int(qty),
-                            "mrp_og": float(mrp_og),
-                            "wp": float(wp),
-                            "mrp_d": float(mrp_d),
-                            "created_at": get_ist_time().isoformat(),
-                        }
+                        all_stock = supabase.table("stock").select("*").execute()
+                        df_all = pd.DataFrame(all_stock.data) if all_stock.data else pd.DataFrame()
 
-                        supabase.table("stock").insert(payload).execute()
-                        st.success("New Stock Item Created Successfully!")
-                except Exception as e:
-                    st.error(f"Failed to add stock: {e}")
+                        success_count = 0
+                        error_count = 0
+
+                        for idx, row in edited_excel_df.iterrows():
+                            try:
+                                p_name = str(row.get("product_name", "")).strip()
+                                g_name = str(row.get("gender", "")).strip()
+                                a_no = str(row.get("art_no", "")).strip()
+                                s_size = str(row.get("size", "")).strip()
+                                q_val = int(row.get("qty", 0))
+                                m_og = float(row.get("mrp_og", 0.0))
+                                w_val = float(row.get("wp", 0.0))
+                                m_d = float(row.get("mrp_d", 0.0))
+
+                                if not p_name or not a_no:
+                                    continue
+
+                                existing = pd.DataFrame()
+                                if not df_all.empty:
+                                    existing = df_all[
+                                        (df_all["product_name"].astype(str).str.lower() == p_name.lower())
+                                        & (df_all["gender"].astype(str).str.lower() == g_name.lower())
+                                        & (df_all["art_no"].astype(str).str.lower() == a_no.lower())
+                                        & (df_all["size"].astype(str) == s_size)
+                                    ]
+
+                                if not existing.empty:
+                                    existing_row = existing.iloc[0]
+                                    updated_qty = int(existing_row["qty"]) + q_val
+                                    supabase.table("stock").update({
+                                        "qty": updated_qty,
+                                        "mrp_og": m_og,
+                                        "wp": w_val,
+                                        "mrp_d": m_d,
+                                    }).eq("id", existing_row["id"]).execute()
+                                else:
+                                    payload = {
+                                        "product_name": p_name,
+                                        "gender": g_name,
+                                        "art_no": a_no,
+                                        "size": s_size,
+                                        "qty": q_val,
+                                        "mrp_og": m_og,
+                                        "wp": w_val,
+                                        "mrp_d": m_d,
+                                        "created_at": get_ist_time().isoformat(),
+                                    }
+                                    supabase.table("stock").insert(payload).execute()
+
+                                success_count += 1
+                            except Exception as row_err:
+                                error_count += 1
+
+                        st.success(f"🎉 Processed successfully! Updated/Added {success_count} stock items.")
+                        if error_count > 0:
+                            st.warning(f"⚠️ Skipped {error_count} rows due to format errors.")
+                        st.rerun()
+
+            except Exception as file_err:
+                st.error(f"Error reading file: {file_err}")
