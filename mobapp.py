@@ -645,9 +645,8 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
 # --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
     with tab_excel:
         st.write("### 📤 Upload Excel or CSV File")
-        uploaded_file = st.file_uploader("Choose an Excel or CSV file", type=["xlsx", "csv"])
 
-        # Default Clean Template Data (NO Delete column)
+        # Default Clean Sample Template Data
         default_template_data = pd.DataFrame([
             {"product_name": "Walkaroo", "gender": "Gents", "art_no": "BX 2618", "size": "7", "qty": 10, "mrp_og": 399.00, "wp": 220.00, "mrp_d": 399.00},
             {"product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00},
@@ -655,6 +654,32 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             {"product_name": "Gel-lite", "gender": "Gents", "art_no": "P27", "size": "8", "qty": 8, "mrp_og": 1100.00, "wp": 650.00, "mrp_d": 1100.00},
             {"product_name": "Gsc Metro", "gender": "Kids (B)", "art_no": "2704", "size": "9", "qty": 20, "mrp_og": 350.00, "wp": 190.00, "mrp_d": 350.00}
         ])
+
+        # Blank Empty Template Structure
+        empty_template_data = pd.DataFrame(columns=[
+            "product_name", "gender", "art_no", "size", "qty", "mrp_og", "wp", "mrp_d"
+        ])
+
+        # Convert template data to Excel byte stream for download
+        import io
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            default_template_data.to_excel(writer, index=False, sheet_name='Template')
+        template_bytes = buffer.getvalue()
+
+        # Top Bar Buttons (File Uploader + Template Download)
+        col_up, col_dl = st.columns([3, 1])
+        with col_up:
+            uploaded_file = st.file_uploader("Choose an Excel or CSV file", type=["xlsx", "csv"])
+        with col_dl:
+            st.write("##")
+            st.download_button(
+                label="📥 Download Sample Excel Template",
+                data=template_bytes,
+                file_name="fayas_footwear_stock_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
         if uploaded_file is not None:
             try:
@@ -695,7 +720,6 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     renamed_cols[col] = col_mapping.get(clean_c, clean_c)
                 df_upload.rename(columns=renamed_cols, inplace=True)
 
-                # FORCIBLY REMOVE UNWANTED COLUMNS
                 cols_to_drop = [c for c in ["s_no", "sno", "Delete_Row", "delete_row", "Delete", "delete"] if c in df_upload.columns]
                 if cols_to_drop:
                     df_upload.drop(columns=cols_to_drop, inplace=True)
@@ -711,11 +735,10 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             except Exception as file_err:
                 st.error(f"Error reading file: {file_err}")
 
-        # Always default to Clean Template if no new file is uploaded
+        # Default initialization
         if "clean_stock_df" not in st.session_state or st.session_state.clean_stock_df is None:
             st.session_state.clean_stock_df = default_template_data.copy()
 
-        # ENSURE DELETE COLUMN IS REMOVED FROM SESSION STATE AS WELL
         if "Delete_Row" in st.session_state.clean_stock_df.columns:
             st.session_state.clean_stock_df.drop(columns=["Delete_Row"], inplace=True)
 
@@ -740,11 +763,20 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             key="clean_editor_key"
         )
 
-        # Reset Button Only
-        if st.button("🔄 Reset to Default Template", type="secondary"):
-            st.session_state.clean_stock_df = default_template_data.copy()
-            st.session_state.pop("file_name", None)
-            st.rerun()
+        # SEPARATE BUTTONS WITH SEPARATE USE CASES
+        col_btn1, col_btn2, col_spacer = st.columns([1, 1, 2])
+        
+        with col_btn1:
+            if st.button("🗑️ Reset Table (Clear All)", type="secondary", use_container_width=True):
+                st.session_state.clean_stock_df = empty_template_data.copy()
+                st.session_state.pop("file_name", None)
+                st.rerun()
+
+        with col_btn2:
+            if st.button("📋 Load Default Template", type="secondary", use_container_width=True):
+                st.session_state.clean_stock_df = default_template_data.copy()
+                st.session_state.pop("file_name", None)
+                st.rerun()
 
         st.divider()
 
@@ -804,7 +836,6 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         except:
                             m_d = m_og
 
-                        # Check Duplicate/Existing Entry
                         existing = pd.DataFrame()
                         if not df_all.empty:
                             existing = df_all[
