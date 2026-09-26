@@ -655,10 +655,10 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 else:
                     df_raw = pd.read_excel(uploaded_file, header=None)
 
-                # 2. Smart header row detection (Finds row containing 'product' or 'art')
+                # 2. Smart header row detection (Safe String conversion)
                 header_idx = 0
                 for idx, row in df_raw.iterrows():
-                    row_str = " ".join(row.astype(str)).lower()
+                    row_str = " ".join(row.dropna().astype(str)).lower()
                     if "product" in row_str or "art" in row_str:
                         header_idx = idx
                         break
@@ -669,10 +669,10 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 else:
                     df_upload = pd.read_excel(uploaded_file, skiprows=header_idx)
 
-                # 4. Standardize Column Names (Cleans up spaces and special characters)
-                df_upload.columns = df_upload.columns.astype(str).str.strip().str.lower().str.replace("-", "_").str.replace(".", "_")
+                # Clean header column names safely
+                df_upload.columns = [str(col).strip().lower().replace("-", "_").replace(".", "_") for col in df_upload.columns]
 
-                # Map common user column variations to DB column names
+                # Map user column names to DB column names
                 col_mapping = {
                     's_no': 's_no',
                     'product_name': 'product_name', 'productname': 'product_name', 'product': 'product_name',
@@ -687,7 +687,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 
                 renamed_cols = {}
                 for col in df_upload.columns:
-                    clean_c = col.strip()
+                    clean_c = str(col).strip()
                     renamed_cols[col] = col_mapping.get(clean_c, clean_c)
                 df_upload.rename(columns=renamed_cols, inplace=True)
 
@@ -727,14 +727,14 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                                 elif g_raw in ['kg', 'kids g', 'kids (g)']:
                                     g_name = "Kids (G)"
                                 else:
-                                    g_name = g_raw.capitalize() if g_raw else "Gents"
+                                    g_name = g_raw.capitalize() if g_raw and g_raw != "nan" else "Gents"
 
                                 a_no = str(row.get("art_no", "")).strip()
                                 s_size = str(row.get("size", "")).strip()
                                 
                                 # Safe Type Conversions
                                 try:
-                                    q_val = int(row.get("qty", 1))
+                                    q_val = int(float(row.get("qty", 1)))
                                 except:
                                     q_val = 1
                                     
@@ -753,7 +753,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                                 except:
                                     m_d = m_og
 
-                                if not p_name or p_name == "nan" or not a_no or a_no == "nan":
+                                if not p_name or p_name.lower() == "nan" or not a_no or a_no.lower() == "nan":
                                     continue
 
                                 # Check Duplicate/Existing Entry
