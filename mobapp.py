@@ -641,11 +641,19 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                             st.success("New Stock Item Created Successfully!")
                     except Exception as e:
                         st.error(f"Failed to add stock: {e}")
-
 # --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
     with tab_excel:
         st.write("### 📤 Upload Excel or CSV File")
         uploaded_file = st.file_uploader("Choose an Excel or CSV file", type=["xlsx", "csv"])
+
+        # Default Standard Template Data (Always Available)
+        default_template_data = pd.DataFrame([
+            {"Delete_Row": False, "product_name": "Walkaroo", "gender": "Gents", "art_no": "BX 2618", "size": "7", "qty": 10, "mrp_og": 399.00, "wp": 220.00, "mrp_d": 399.00},
+            {"Delete_Row": False, "product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00},
+            {"Delete_Row": False, "product_name": "UKC-Pride", "gender": "Ladies", "art_no": "GP-1331", "size": "6", "qty": 15, "mrp_og": 299.00, "wp": 160.00, "mrp_d": 299.00},
+            {"Delete_Row": False, "product_name": "Gel-lite", "gender": "Gents", "art_no": "P27", "size": "8", "qty": 8, "mrp_og": 1100.00, "wp": 650.00, "mrp_d": 1100.00},
+            {"Delete_Row": False, "product_name": "Gsc Metro", "gender": "Kids (B)", "art_no": "2704", "size": "9", "qty": 20, "mrp_og": 350.00, "wp": 190.00, "mrp_d": 350.00}
+        ])
 
         if uploaded_file is not None:
             try:
@@ -674,7 +682,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
 
                 # Map column names
                 col_mapping = {
-                    's_no': 's_no', 'sno': 's_no', 's__no': 's_no',
+                    's_no': 's_no', 'sno': 's_no',
                     'product_name': 'product_name', 'productname': 'product_name', 'product': 'product_name',
                     'gender': 'gender',
                     'art_no': 'art_no', 'artno': 'art_no', 'art': 'art_no',
@@ -691,7 +699,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     renamed_cols[col] = col_mapping.get(clean_c, clean_c)
                 df_upload.rename(columns=renamed_cols, inplace=True)
 
-                # --- 🔴 COMPLETE REMOVAL OF S_NO COLUMN & TOTAL ROWS ---
+                # Remove s_no column & Total rows if present
                 if "s_no" in df_upload.columns:
                     df_upload.drop(columns=["s_no"], inplace=True)
 
@@ -700,145 +708,149 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         ~df_upload["product_name"].astype(str).str.lower().str.strip().isin(["total", "sum", "grand total", "none", "nan", ""])
                     ]
 
-                # Add explicit check-box column for row deletion
                 if "Delete_Row" not in df_upload.columns:
                     df_upload.insert(0, "Delete_Row", False)
 
-                # Session State Storage
-                if "edited_df" not in st.session_state or st.session_state.get("file_name") != uploaded_file.name:
-                    st.session_state.edited_df = df_upload
-                    st.session_state.file_name = uploaded_file.name
-
-                st.write("### 🔍 Cleaned Preview & Edit")
-                st.caption("💡 **s_no column ni poorthiga delete chesam.** Row-ni remove cheyaniki `Delete_Row` box check chesi keela unna button press cheyandi!")
-
-                # Render Data Table without s_no column
-                updated_df = st.data_editor(
-                    st.session_state.edited_df,
-                    column_config={
-                        "Delete_Row": st.column_config.CheckboxColumn(
-                            "Delete?",
-                            help="Row ni delete cheyaniki tick cheyandi",
-                            default=False
-                        )
-                    },
-                    num_rows="dynamic",
-                    use_container_width=True,
-                    key="data_editor_key"
-                )
-
-                # Delete Rows Action Button
-                col_btn, _ = st.columns([1, 2])
-                with col_btn:
-                    if st.button("🗑️ Selected Rows-a Delete Pannu", type="secondary"):
-                        filtered_df = updated_df[updated_df["Delete_Row"] == False]
-                        st.session_state.edited_df = filtered_df
-                        st.success("Selected rows removed successfully!")
-                        st.rerun()
-
-                st.divider()
-
-                # Upload to Supabase Action Button
-                if st.button("🚀 Upload & Sync All to Database", type="primary"):
-                    final_upload_df = updated_df[updated_df["Delete_Row"] == False]
-                    
-                    if final_upload_df.empty:
-                        st.warning("Table kaaliyaa irukku!")
-                    else:
-                        all_stock = supabase.table("stock").select("*").execute()
-                        df_all = pd.DataFrame(all_stock.data) if all_stock.data else pd.DataFrame()
-
-                        success_count = 0
-                        error_count = 0
-
-                        for idx, row in final_upload_df.iterrows():
-                            try:
-                                p_name = str(row.get("product_name", "")).strip()
-                                
-                                if not p_name or p_name.lower() in ["total", "nan", "none", "grand total", "sum", ""]:
-                                    continue
-
-                                g_raw = str(row.get("gender", "")).strip().lower()
-                                
-                                if g_raw in ['g', 'gents', 'm', 'male']:
-                                    g_name = "Gents"
-                                elif g_raw in ['l', 'ladies', 'f', 'female']:
-                                    g_name = "Ladies"
-                                elif g_raw in ['kb', 'kids b', 'kids (b)']:
-                                    g_name = "Kids (B)"
-                                elif g_raw in ['kg', 'kids g', 'kids (g)']:
-                                    g_name = "Kids (G)"
-                                else:
-                                    g_name = g_raw.capitalize() if g_raw and g_raw != "nan" else "Gents"
-
-                                a_no = str(row.get("art_no", "")).strip()
-                                s_size = str(row.get("size", "")).strip()
-                                
-                                if not a_no or a_no.lower() in ["nan", "none", ""]:
-                                    continue
-
-                                try:
-                                    q_val = int(float(row.get("qty", 1)))
-                                except:
-                                    q_val = 1
-                                    
-                                try:
-                                    m_og = float(row.get("mrp_og", 0.0))
-                                except:
-                                    m_og = 0.0
-                                    
-                                try:
-                                    w_val = float(row.get("wp", 0.0))
-                                except:
-                                    w_val = 0.0
-                                    
-                                try:
-                                    m_d = float(row.get("mrp_d", 0.0)) if pd.notnull(row.get("mrp_d")) else m_og
-                                except:
-                                    m_d = m_og
-
-                                # Check Duplicate/Existing Entry
-                                existing = pd.DataFrame()
-                                if not df_all.empty:
-                                    existing = df_all[
-                                        (df_all["product_name"].astype(str).str.lower() == p_name.lower())
-                                        & (df_all["gender"].astype(str).str.lower() == g_name.lower())
-                                        & (df_all["art_no"].astype(str).str.lower() == a_no.lower())
-                                        & (df_all["size"].astype(str) == s_size)
-                                    ]
-
-                                if not existing.empty:
-                                    existing_row = existing.iloc[0]
-                                    updated_qty = int(existing_row["qty"]) + q_val
-                                    supabase.table("stock").update({
-                                        "qty": updated_qty,
-                                        "mrp_og": m_og,
-                                        "wp": w_val,
-                                        "mrp_d": m_d,
-                                    }).eq("id", existing_row["id"]).execute()
-                                else:
-                                    payload = {
-                                        "product_name": p_name,
-                                        "gender": g_name,
-                                        "art_no": a_no,
-                                        "size": s_size,
-                                        "qty": q_val,
-                                        "mrp_og": m_og,
-                                        "wp": w_val,
-                                        "mrp_d": m_d,
-                                        "created_at": get_ist_time().isoformat(),
-                                    }
-                                    supabase.table("stock").insert(payload).execute()
-
-                                success_count += 1
-                            except Exception as row_err:
-                                error_count += 1
-
-                        st.success(f"🎉 Successfully imported {success_count} stock items!")
-                        if error_count > 0:
-                            st.warning(f"⚠️ Skipped {error_count} invalid rows.")
-                        st.session_state.pop("edited_df", None)
-                        st.rerun()
+                # Store uploaded data in session
+                st.session_state.edited_df = df_upload
+                st.session_state.file_name = uploaded_file.name
 
             except Exception as file_err:
                 st.error(f"Error reading file: {file_err}")
+
+        # If no file uploaded, load Standard Template as Default
+        if "edited_df" not in st.session_state or st.session_state.edited_df is None:
+            st.session_state.edited_df = default_template_data.copy()
+
+        st.write("### 🔍 Live Editable Table Template")
+        st.caption("💡 App open panna eppovumay intha Standard Template ready-a irukkum! Direct-a values-a change panni `Sync` pannaலாம் or new Excel upload pannaலாம்.")
+
+        # Display Dynamic Table Editor
+        updated_df = st.data_editor(
+            st.session_state.edited_df,
+            column_config={
+                "Delete_Row": st.column_config.CheckboxColumn("Delete?", default=False),
+                "mrp_og": st.column_config.NumberColumn("Original MRP", format="₹%.2f"),
+                "wp": st.column_config.NumberColumn("Wholesale Price", format="₹%.2f"),
+                "mrp_d": st.column_config.NumberColumn("Duplicate MRP", format="₹%.2f"),
+            },
+            num_rows="dynamic",
+            use_container_width=True,
+            key="data_editor_key"
+        )
+
+        # Controls & Action Buttons
+        col_btn1, col_btn2 = st.columns([1, 1])
+        with col_btn1:
+            if st.button("🗑️ Delete Selected Rows", type="secondary"):
+                filtered_df = updated_df[updated_df["Delete_Row"] == False]
+                st.session_state.edited_df = filtered_df
+                st.success("Selected rows removed!")
+                st.rerun()
+
+        with col_btn2:
+            if st.button("🔄 Reset to Default Template", type="secondary"):
+                st.session_state.edited_df = default_template_data.copy()
+                st.session_state.pop("file_name", None)
+                st.rerun()
+
+        st.divider()
+
+        # Database Sync Button
+        if st.button("🚀 Upload & Sync All to Database", type="primary"):
+            final_upload_df = updated_df[updated_df["Delete_Row"] == False]
+            
+            if final_upload_df.empty:
+                st.warning("Table kaaliyaa irukku!")
+            else:
+                all_stock = supabase.table("stock").select("*").execute()
+                df_all = pd.DataFrame(all_stock.data) if all_stock.data else pd.DataFrame()
+
+                success_count = 0
+                error_count = 0
+
+                for idx, row in final_upload_df.iterrows():
+                    try:
+                        p_name = str(row.get("product_name", "")).strip()
+                        if not p_name or p_name.lower() in ["total", "nan", "none", "grand total", "sum", ""]:
+                            continue
+
+                        g_raw = str(row.get("gender", "")).strip().lower()
+                        if g_raw in ['g', 'gents', 'm', 'male']:
+                            g_name = "Gents"
+                        elif g_raw in ['l', 'ladies', 'f', 'female']:
+                            g_name = "Ladies"
+                        elif g_raw in ['kb', 'kids b', 'kids (b)']:
+                            g_name = "Kids (B)"
+                        elif g_raw in ['kg', 'kids g', 'kids (g)']:
+                            g_name = "Kids (G)"
+                        else:
+                            g_name = g_raw.capitalize() if g_raw and g_raw != "nan" else "Gents"
+
+                        a_no = str(row.get("art_no", "")).strip()
+                        s_size = str(row.get("size", "")).strip()
+                        if not a_no or a_no.lower() in ["nan", "none", ""]:
+                            continue
+
+                        try:
+                            q_val = int(float(row.get("qty", 1)))
+                        except:
+                            q_val = 1
+                            
+                        try:
+                            m_og = float(row.get("mrp_og", 0.0))
+                        except:
+                            m_og = 0.0
+                            
+                        try:
+                            w_val = float(row.get("wp", 0.0))
+                        except:
+                            w_val = 0.0
+                            
+                        try:
+                            m_d = float(row.get("mrp_d", 0.0)) if pd.notnull(row.get("mrp_d")) else m_og
+                        except:
+                            m_d = m_og
+
+                        # Check Duplicate/Existing Entry
+                        existing = pd.DataFrame()
+                        if not df_all.empty:
+                            existing = df_all[
+                                (df_all["product_name"].astype(str).str.lower() == p_name.lower())
+                                & (df_all["gender"].astype(str).str.lower() == g_name.lower())
+                                & (df_all["art_no"].astype(str).str.lower() == a_no.lower())
+                                & (df_all["size"].astype(str) == s_size)
+                            ]
+
+                        if not existing.empty:
+                            existing_row = existing.iloc[0]
+                            updated_qty = int(existing_row["qty"]) + q_val
+                            supabase.table("stock").update({
+                                "qty": updated_qty,
+                                "mrp_og": m_og,
+                                "wp": w_val,
+                                "mrp_d": m_d,
+                            }).eq("id", existing_row["id"]).execute()
+                        else:
+                            payload = {
+                                "product_name": p_name,
+                                "gender": g_name,
+                                "art_no": a_no,
+                                "size": s_size,
+                                "qty": q_val,
+                                "mrp_og": m_og,
+                                "wp": w_val,
+                                "mrp_d": m_d,
+                                "created_at": get_ist_time().isoformat(),
+                            }
+                            supabase.table("stock").insert(payload).execute()
+
+                        success_count += 1
+                    except Exception as row_err:
+                        error_count += 1
+
+                st.success(f"🎉 Successfully imported {success_count} stock items!")
+                if error_count > 0:
+                    st.warning(f"⚠️ Skipped {error_count} invalid rows.")
+                st.session_state.edited_df = default_template_data.copy()
+                st.rerun()
