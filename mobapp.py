@@ -646,13 +646,13 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
         st.write("### 📤 Upload Excel or CSV File")
         uploaded_file = st.file_uploader("Choose an Excel or CSV file", type=["xlsx", "csv"])
 
-        # Default Standard Template Data (Always Available)
+        # Default Standard Template Data (Cleaned without Delete column)
         default_template_data = pd.DataFrame([
-            {"Delete_Row": False, "product_name": "Walkaroo", "gender": "Gents", "art_no": "BX 2618", "size": "7", "qty": 10, "mrp_og": 399.00, "wp": 220.00, "mrp_d": 399.00},
-            {"Delete_Row": False, "product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00},
-            {"Delete_Row": False, "product_name": "UKC-Pride", "gender": "Ladies", "art_no": "GP-1331", "size": "6", "qty": 15, "mrp_og": 299.00, "wp": 160.00, "mrp_d": 299.00},
-            {"Delete_Row": False, "product_name": "Gel-lite", "gender": "Gents", "art_no": "P27", "size": "8", "qty": 8, "mrp_og": 1100.00, "wp": 650.00, "mrp_d": 1100.00},
-            {"Delete_Row": False, "product_name": "Gsc Metro", "gender": "Kids (B)", "art_no": "2704", "size": "9", "qty": 20, "mrp_og": 350.00, "wp": 190.00, "mrp_d": 350.00}
+            {"product_name": "Walkaroo", "gender": "Gents", "art_no": "BX 2618", "size": "7", "qty": 10, "mrp_og": 399.00, "wp": 220.00, "mrp_d": 399.00},
+            {"product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00},
+            {"product_name": "UKC-Pride", "gender": "Ladies", "art_no": "GP-1331", "size": "6", "qty": 15, "mrp_og": 299.00, "wp": 160.00, "mrp_d": 299.00},
+            {"product_name": "Gel-lite", "gender": "Gents", "art_no": "P27", "size": "8", "qty": 8, "mrp_og": 1100.00, "wp": 650.00, "mrp_d": 1100.00},
+            {"product_name": "Gsc Metro", "gender": "Kids (B)", "art_no": "2704", "size": "9", "qty": 20, "mrp_og": 350.00, "wp": 190.00, "mrp_d": 350.00}
         ])
 
         if uploaded_file is not None:
@@ -699,17 +699,17 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     renamed_cols[col] = col_mapping.get(clean_c, clean_c)
                 df_upload.rename(columns=renamed_cols, inplace=True)
 
-                # Remove s_no column & Total rows if present
+                # Remove unnecessary columns
                 if "s_no" in df_upload.columns:
                     df_upload.drop(columns=["s_no"], inplace=True)
+
+                if "Delete_Row" in df_upload.columns:
+                    df_upload.drop(columns=["Delete_Row"], inplace=True)
 
                 if "product_name" in df_upload.columns:
                     df_upload = df_upload[
                         ~df_upload["product_name"].astype(str).str.lower().str.strip().isin(["total", "sum", "grand total", "none", "nan", ""])
                     ]
-
-                if "Delete_Row" not in df_upload.columns:
-                    df_upload.insert(0, "Delete_Row", False)
 
                 # Store uploaded data in session
                 st.session_state.edited_df = df_upload
@@ -718,18 +718,22 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             except Exception as file_err:
                 st.error(f"Error reading file: {file_err}")
 
-        # If no file uploaded, load Standard Template as Default
+        # If no file uploaded, load Clean Standard Template
         if "edited_df" not in st.session_state or st.session_state.edited_df is None:
             st.session_state.edited_df = default_template_data.copy()
 
         st.write("### 🔍 Live Editable Table Template")
-        st.caption("💡 App open panna eppovumay intha Standard Template ready-a irukkum! Direct-a values-a change panni `Sync` pannaலாம் or new Excel upload pannaலாம்.")
+        st.caption("💡 Direct-a values-a change panni `Sync` pannaலாம் or new Excel upload pannaலாம்.")
 
         # Display Dynamic Table Editor
         updated_df = st.data_editor(
             st.session_state.edited_df,
             column_config={
-                "Delete_Row": st.column_config.CheckboxColumn("Delete?", default=False),
+                "product_name": st.column_config.TextColumn("product_name"),
+                "gender": st.column_config.TextColumn("gender"),
+                "art_no": st.column_config.TextColumn("art_no"),
+                "size": st.column_config.TextColumn("size"),
+                "qty": st.column_config.NumberColumn("qty"),
                 "mrp_og": st.column_config.NumberColumn("Original MRP", format="₹%.2f"),
                 "wp": st.column_config.NumberColumn("Wholesale Price", format="₹%.2f"),
                 "mrp_d": st.column_config.NumberColumn("Duplicate MRP", format="₹%.2f"),
@@ -739,26 +743,17 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             key="data_editor_key"
         )
 
-        # Controls & Action Buttons
-        col_btn1, col_btn2 = st.columns([1, 1])
-        with col_btn1:
-            if st.button("🗑️ Delete Selected Rows", type="secondary"):
-                filtered_df = updated_df[updated_df["Delete_Row"] == False]
-                st.session_state.edited_df = filtered_df
-                st.success("Selected rows removed!")
-                st.rerun()
-
-        with col_btn2:
-            if st.button("🔄 Reset to Default Template", type="secondary"):
-                st.session_state.edited_df = default_template_data.copy()
-                st.session_state.pop("file_name", None)
-                st.rerun()
+        # Reset Button Only
+        if st.button("🔄 Reset to Default Template", type="secondary"):
+            st.session_state.edited_df = default_template_data.copy()
+            st.session_state.pop("file_name", None)
+            st.rerun()
 
         st.divider()
 
         # Database Sync Button
         if st.button("🚀 Upload & Sync All to Database", type="primary"):
-            final_upload_df = updated_df[updated_df["Delete_Row"] == False]
+            final_upload_df = updated_df.copy()
             
             if final_upload_df.empty:
                 st.warning("Table kaaliyaa irukku!")
