@@ -655,7 +655,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 else:
                     df_raw = pd.read_excel(uploaded_file, header=None)
 
-                # 2. Smart header row detection (Safe String conversion)
+                # 2. Smart header row detection
                 header_idx = 0
                 for idx, row in df_raw.iterrows():
                     row_str = " ".join(row.dropna().astype(str)).lower()
@@ -669,10 +669,10 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 else:
                     df_upload = pd.read_excel(uploaded_file, skiprows=header_idx)
 
-                # Safe column naming
+                # Clean header column names
                 df_upload.columns = [str(col).strip().lower().replace("-", "_").replace(".", "_") for col in df_upload.columns]
 
-                # Map user column names to DB column names
+                # Map column names
                 col_mapping = {
                     's_no': 's_no',
                     'product_name': 'product_name', 'productname': 'product_name', 'product': 'product_name',
@@ -691,24 +691,57 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     renamed_cols[col] = col_mapping.get(clean_c, clean_c)
                 df_upload.rename(columns=renamed_cols, inplace=True)
 
-                # Filter out Total / Summary rows automatically before showing preview
+                # Auto-remove Total / Invalid rows
                 if "product_name" in df_upload.columns:
-                    df_upload = df_upload[~df_upload["product_name"].astype(str).str.lower().isin(["total", "sum", "grand total", "none", "nan"])]
+                    df_upload = df_upload[
+                        ~df_upload["product_name"].astype(str).str.lower().str.strip().isin(["total", "sum", "grand total", "none", "nan", ""])
+                    ]
 
-                st.write("### 🔍 Cleaned Preview & Edit")
-                st.caption("💡 **Tip:** Rows-ai select (tick) panni, Table top-right corner-la irukku **🗑️ Trash (Delete)** icon click panni rows-ai remove pannalam!")
+                # Explicit Checkbox Column for Deletion
+                if "Delete_Row" not in df_upload.columns:
+                    df_upload.insert(0, "Delete_Row", False)
 
-                # Display Editable Table with Dynamic Row Deletion
-                edited_excel_df = st.data_editor(
-                    df_upload,
+                # Session State Storage to manage deletions smoothly
+                if "edited_df" not in st.session_state or st.session_state.get("file_name") != uploaded_file.name:
+                    st.session_state.edited_df = df_upload
+                    st.session_state.file_name = uploaded_file.name
+
+                st.write("### 🔍 Preview & Edit")
+                st.caption("💡 Delete panna vendiya rows-ku **Delete_Row** column-la tick panni keela irukka Delete button-a amuthunga!")
+
+                # Render Editable Data Table
+                updated_df = st.data_editor(
+                    st.session_state.edited_df,
+                    column_config={
+                        "Delete_Row": st.column_config.CheckboxColumn(
+                            "Delete?",
+                            help="Tick panni delete pannunga",
+                            default=False
+                        )
+                    },
                     num_rows="dynamic",
                     use_container_width=True,
-                    key="smart_excel_editor"
+                    key="data_editor_key"
                 )
 
+                # Delete Button Trigger
+                col_btn, _ = st.columns([1, 2])
+                with col_btn:
+                    if st.button("🗑️ Selected Rows-a Delete Pannu", type="secondary"):
+                        # Keep only unchecked rows
+                        filtered_df = updated_df[updated_df["Delete_Row"] == False]
+                        st.session_state.edited_df = filtered_df
+                        st.success("Selected rows delete aayiduchu!")
+                        st.rerun()
+
+                st.divider()
+
+                # Save / Sync Button
                 if st.button("🚀 Upload & Sync All to Database", type="primary"):
-                    if edited_excel_df.empty:
-                        st.warning("Uploaded table is empty!")
+                    final_upload_df = updated_df[updated_df["Delete_Row"] == False]
+                    
+                    if final_upload_df.empty:
+                        st.warning("Table kaaliyaa irukku!")
                     else:
                         all_stock = supabase.table("stock").select("*").execute()
                         df_all = pd.DataFrame(all_stock.data) if all_stock.data else pd.DataFrame()
@@ -716,17 +749,15 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         success_count = 0
                         error_count = 0
 
-                        for idx, row in edited_excel_df.iterrows():
+                        for idx, row in final_upload_df.iterrows():
                             try:
                                 p_name = str(row.get("product_name", "")).strip()
                                 
-                                # Ignore Total or empty rows completely
                                 if not p_name or p_name.lower() in ["total", "nan", "none", "grand total", "sum", ""]:
                                     continue
 
                                 g_raw = str(row.get("gender", "")).strip().lower()
                                 
-                                # Auto Gender Mapping ('g' -> 'Gents', 'l' -> 'Ladies')
                                 if g_raw in ['g', 'gents', 'm', 'male']:
                                     g_name = "Gents"
                                 elif g_raw in ['l', 'ladies', 'f', 'female']:
@@ -744,7 +775,6 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                                 if not a_no or a_no.lower() in ["nan", "none", ""]:
                                     continue
 
-                                # Safe Type Conversions
                                 try:
                                     q_val = int(float(row.get("qty", 1)))
                                 except:
@@ -805,6 +835,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         st.success(f"🎉 Successfully imported {success_count} stock items!")
                         if error_count > 0:
                             st.warning(f"⚠️ Skipped {error_count} invalid rows.")
+                        st.session_state.pop("edited_df", None)
                         st.rerun()
 
             except Exception as file_err:
