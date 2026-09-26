@@ -642,29 +642,64 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     except Exception as e:
                         st.error(f"Failed to add stock: {e}")
 
-    # --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
+# --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
     with tab_excel:
         st.write("### 📤 Upload Excel or CSV File")
-        st.info("Excel File Columns Mode: `product_name`, `gender`, `art_no`, `size`, `qty`, `mrp_og`, `wp`, `mrp_d`")
-
         uploaded_file = st.file_uploader("Choose an Excel or CSV file", type=["xlsx", "csv"])
 
         if uploaded_file is not None:
             try:
+                # 1. Read file raw
                 if uploaded_file.name.endswith(".csv"):
-                    df_upload = pd.read_csv(uploaded_file)
+                    df_raw = pd.read_csv(uploaded_file, header=None)
                 else:
-                    df_upload = pd.read_excel(uploaded_file)
+                    df_raw = pd.read_excel(uploaded_file, header=None)
 
-                st.write("### 🔍 Preview & Edit Uploaded Data")
-                st.caption("Double-click on any cell below to make corrections before saving to database!")
+                # 2. Smart header row detection (Finds row containing 'product' or 'art')
+                header_idx = 0
+                for idx, row in df_raw.iterrows():
+                    row_str = " ".join(row.astype(str)).lower()
+                    if "product" in row_str or "art" in row_str:
+                        header_idx = idx
+                        break
 
-                # Live Interactive Table Editor
+                # 3. Reload DataFrame with correct header row
+                if uploaded_file.name.endswith(".csv"):
+                    df_upload = pd.read_csv(uploaded_file, skiprows=header_idx)
+                else:
+                    df_upload = pd.read_excel(uploaded_file, skiprows=header_idx)
+
+                # 4. Standardize Column Names (Cleans up spaces and special characters)
+                df_upload.columns = df_upload.columns.astype(str).str.strip().str.lower().str.replace("-", "_").str.replace(".", "_")
+
+                # Map common user column variations to DB column names
+                col_mapping = {
+                    's_no': 's_no',
+                    'product_name': 'product_name', 'productname': 'product_name', 'product': 'product_name',
+                    'gender': 'gender',
+                    'art_no': 'art_no', 'artno': 'art_no', 'art': 'art_no',
+                    'size': 'size',
+                    'qty': 'qty', 'quantity': 'qty',
+                    'mrp': 'mrp_og', 'mrp_og': 'mrp_og', 'original_mrp': 'mrp_og',
+                    'w_p': 'wp', 'wp': 'wp', 'wholesale': 'wp', 'wholesale_price': 'wp',
+                    'duplicate_mrp': 'mrp_d', 'mrp_d': 'mrp_d'
+                }
+                
+                renamed_cols = {}
+                for col in df_upload.columns:
+                    clean_c = col.strip()
+                    renamed_cols[col] = col_mapping.get(clean_c, clean_c)
+                df_upload.rename(columns=renamed_cols, inplace=True)
+
+                st.write("### 🔍 Cleaned Preview & Edit")
+                st.caption("Review the extracted columns below before uploading!")
+
+                # Display Editable Table
                 edited_excel_df = st.data_editor(
                     df_upload,
                     num_rows="dynamic",
                     use_container_width=True,
-                    key="excel_editor"
+                    key="smart_excel_editor"
                 )
 
                 if st.button("🚀 Upload & Sync All to Database", type="primary"):
@@ -680,17 +715,48 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         for idx, row in edited_excel_df.iterrows():
                             try:
                                 p_name = str(row.get("product_name", "")).strip()
-                                g_name = str(row.get("gender", "")).strip()
+                                g_raw = str(row.get("gender", "")).strip().lower()
+                                
+                                # Auto Gender Mapping ('g' -> 'Gents', 'l' -> 'Ladies')
+                                if g_raw in ['g', 'gents', 'm', 'male']:
+                                    g_name = "Gents"
+                                elif g_raw in ['l', 'ladies', 'f', 'female']:
+                                    g_name = "Ladies"
+                                elif g_raw in ['kb', 'kids b', 'kids (b)']:
+                                    g_name = "Kids (B)"
+                                elif g_raw in ['kg', 'kids g', 'kids (g)']:
+                                    g_name = "Kids (G)"
+                                else:
+                                    g_name = g_raw.capitalize() if g_raw else "Gents"
+
                                 a_no = str(row.get("art_no", "")).strip()
                                 s_size = str(row.get("size", "")).strip()
-                                q_val = int(row.get("qty", 0))
-                                m_og = float(row.get("mrp_og", 0.0))
-                                w_val = float(row.get("wp", 0.0))
-                                m_d = float(row.get("mrp_d", 0.0))
+                                
+                                # Safe Type Conversions
+                                try:
+                                    q_val = int(row.get("qty", 1))
+                                except:
+                                    q_val = 1
+                                    
+                                try:
+                                    m_og = float(row.get("mrp_og", 0.0))
+                                except:
+                                    m_og = 0.0
+                                    
+                                try:
+                                    w_val = float(row.get("wp", 0.0))
+                                except:
+                                    w_val = 0.0
+                                    
+                                try:
+                                    m_d = float(row.get("mrp_d", 0.0)) if pd.notnull(row.get("mrp_d")) else m_og
+                                except:
+                                    m_d = m_og
 
-                                if not p_name or not a_no:
+                                if not p_name or p_name == "nan" or not a_no or a_no == "nan":
                                     continue
 
+                                # Check Duplicate/Existing Entry
                                 existing = pd.DataFrame()
                                 if not df_all.empty:
                                     existing = df_all[
@@ -727,9 +793,9 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                             except Exception as row_err:
                                 error_count += 1
 
-                        st.success(f"🎉 Processed successfully! Updated/Added {success_count} stock items.")
+                        st.success(f"🎉 Successfully imported {success_count} stock items!")
                         if error_count > 0:
-                            st.warning(f"⚠️ Skipped {error_count} rows due to format errors.")
+                            st.warning(f"⚠️ Skipped {error_count} invalid rows.")
                         st.rerun()
 
             except Exception as file_err:
