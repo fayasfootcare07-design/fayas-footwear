@@ -674,7 +674,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
 
                 # Map column names
                 col_mapping = {
-                    's_no': 's_no',
+                    's_no': 's_no', 'sno': 's_no', 's__no': 's_no',
                     'product_name': 'product_name', 'productname': 'product_name', 'product': 'product_name',
                     'gender': 'gender',
                     'art_no': 'art_no', 'artno': 'art_no', 'art': 'art_no',
@@ -691,31 +691,34 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     renamed_cols[col] = col_mapping.get(clean_c, clean_c)
                 df_upload.rename(columns=renamed_cols, inplace=True)
 
-                # Auto-remove Total / Invalid rows
+                # --- 🔴 COMPLETE REMOVAL OF S_NO COLUMN & TOTAL ROWS ---
+                if "s_no" in df_upload.columns:
+                    df_upload.drop(columns=["s_no"], inplace=True)
+
                 if "product_name" in df_upload.columns:
                     df_upload = df_upload[
                         ~df_upload["product_name"].astype(str).str.lower().str.strip().isin(["total", "sum", "grand total", "none", "nan", ""])
                     ]
 
-                # Explicit Checkbox Column for Deletion
+                # Add explicit check-box column for row deletion
                 if "Delete_Row" not in df_upload.columns:
                     df_upload.insert(0, "Delete_Row", False)
 
-                # Session State Storage to manage deletions smoothly
+                # Session State Storage
                 if "edited_df" not in st.session_state or st.session_state.get("file_name") != uploaded_file.name:
                     st.session_state.edited_df = df_upload
                     st.session_state.file_name = uploaded_file.name
 
-                st.write("### 🔍 Preview & Edit")
-                st.caption("💡 Delete panna vendiya rows-ku **Delete_Row** column-la tick panni keela irukka Delete button-a amuthunga!")
+                st.write("### 🔍 Cleaned Preview & Edit")
+                st.caption("💡 **s_no column ni poorthiga delete chesam.** Row-ni remove cheyaniki `Delete_Row` box check chesi keela unna button press cheyandi!")
 
-                # Render Editable Data Table
+                # Render Data Table without s_no column
                 updated_df = st.data_editor(
                     st.session_state.edited_df,
                     column_config={
                         "Delete_Row": st.column_config.CheckboxColumn(
                             "Delete?",
-                            help="Tick panni delete pannunga",
+                            help="Row ni delete cheyaniki tick cheyandi",
                             default=False
                         )
                     },
@@ -724,19 +727,18 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     key="data_editor_key"
                 )
 
-                # Delete Button Trigger
+                # Delete Rows Action Button
                 col_btn, _ = st.columns([1, 2])
                 with col_btn:
                     if st.button("🗑️ Selected Rows-a Delete Pannu", type="secondary"):
-                        # Keep only unchecked rows
                         filtered_df = updated_df[updated_df["Delete_Row"] == False]
                         st.session_state.edited_df = filtered_df
-                        st.success("Selected rows delete aayiduchu!")
+                        st.success("Selected rows removed successfully!")
                         st.rerun()
 
                 st.divider()
 
-                # Save / Sync Button
+                # Upload to Supabase Action Button
                 if st.button("🚀 Upload & Sync All to Database", type="primary"):
                     final_upload_df = updated_df[updated_df["Delete_Row"] == False]
                     
