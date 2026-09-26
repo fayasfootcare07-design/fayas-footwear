@@ -669,7 +669,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 else:
                     df_upload = pd.read_excel(uploaded_file, skiprows=header_idx)
 
-                # Clean header column names safely
+                # Safe column naming
                 df_upload.columns = [str(col).strip().lower().replace("-", "_").replace(".", "_") for col in df_upload.columns]
 
                 # Map user column names to DB column names
@@ -691,10 +691,14 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     renamed_cols[col] = col_mapping.get(clean_c, clean_c)
                 df_upload.rename(columns=renamed_cols, inplace=True)
 
-                st.write("### 🔍 Cleaned Preview & Edit")
-                st.caption("Review the extracted columns below before uploading!")
+                # Filter out Total / Summary rows automatically before showing preview
+                if "product_name" in df_upload.columns:
+                    df_upload = df_upload[~df_upload["product_name"].astype(str).str.lower().isin(["total", "sum", "grand total", "none", "nan"])]
 
-                # Display Editable Table
+                st.write("### 🔍 Cleaned Preview & Edit")
+                st.caption("💡 **Tip:** Rows-ai select (tick) panni, Table top-right corner-la irukku **🗑️ Trash (Delete)** icon click panni rows-ai remove pannalam!")
+
+                # Display Editable Table with Dynamic Row Deletion
                 edited_excel_df = st.data_editor(
                     df_upload,
                     num_rows="dynamic",
@@ -715,6 +719,11 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                         for idx, row in edited_excel_df.iterrows():
                             try:
                                 p_name = str(row.get("product_name", "")).strip()
+                                
+                                # Ignore Total or empty rows completely
+                                if not p_name or p_name.lower() in ["total", "nan", "none", "grand total", "sum", ""]:
+                                    continue
+
                                 g_raw = str(row.get("gender", "")).strip().lower()
                                 
                                 # Auto Gender Mapping ('g' -> 'Gents', 'l' -> 'Ladies')
@@ -732,6 +741,9 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                                 a_no = str(row.get("art_no", "")).strip()
                                 s_size = str(row.get("size", "")).strip()
                                 
+                                if not a_no or a_no.lower() in ["nan", "none", ""]:
+                                    continue
+
                                 # Safe Type Conversions
                                 try:
                                     q_val = int(float(row.get("qty", 1)))
@@ -752,9 +764,6 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                                     m_d = float(row.get("mrp_d", 0.0)) if pd.notnull(row.get("mrp_d")) else m_og
                                 except:
                                     m_d = m_og
-
-                                if not p_name or p_name.lower() == "nan" or not a_no or a_no.lower() == "nan":
-                                    continue
 
                                 # Check Duplicate/Existing Entry
                                 existing = pd.DataFrame()
