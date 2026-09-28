@@ -296,7 +296,7 @@ elif menu == "📊 Sales Analytics":
                                             "gender": str(row.get("gender", "")),
                                             "art_no": str(row.get("art_no", "")),
                                             "size": str(row.get("size", "")),
-                                            "qty": int(row.get("qty", 1)),
+                                            #"qty": int(row.get("qty", 1)),
                                             "price": float(row.get("price", 0.0)),
                                             "payment_mode": str(row.get("payment_mode", "Cash")),
                                         }
