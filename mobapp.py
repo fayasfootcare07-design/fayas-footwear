@@ -213,7 +213,7 @@ if menu == "📦 Live Stock":
         st.error(f"Error fetching stock: {e}")
 
 # ---------------------------------------------------------
-# 2. SALES ANALYTICS (EDITABLE ON DOUBLE CLICK & SAVE / DELETE)
+# 2. SALES ANALYTICS (CLEAN & SIMPLE TABLE VIEW)
 # ---------------------------------------------------------
 elif menu == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & Profitability")
@@ -262,18 +262,24 @@ elif menu == "📊 Sales Analytics":
                 m2.metric("Total Revenue", f"₹{total_rev:,.2f}")
                 m3.metric("Estimated Profit", f"₹{total_profit:,.2f}")
 
-                df_filtered = format_df_dates(df_filtered)
-                display_cols = [c for c in df_filtered.columns if c not in ["datetime_ist", "date_only", "cost", "profit"]]
-                df_display = df_filtered[display_cols].sort_values(by="id", ascending=False)
+                # Keeping ID for background updates, but filtering required columns for clean display
+                required_cols = ["id", "product_name", "gender", "art_no", "size", "qty", "price", "payment_mode"]
+                
+                # Filter columns that actually exist in the dataframe
+                available_cols = [c for c in required_cols if c in df_filtered.columns]
+                df_display = df_filtered[available_cols].sort_values(by="id", ascending=False)
 
                 if st.session_state.get("admin_logged_in", False):
                     df_display.insert(0, "Select", False)
 
-                    # st.data_editor enables double-click edit on table cells
+                    # Display only clean columns in data_editor & hide 'id' column
                     edited_sales_df = st.data_editor(
                         df_display,
                         key="sales_editor",
-                        disabled=["id", "created_at"],  # id and created_at are locked
+                        disabled=["id"],
+                        column_config={
+                            "id": None,  # Hides the ID column completely from table view
+                        },
                         use_container_width=True,
                     )
 
@@ -286,13 +292,11 @@ elif menu == "📊 Sales Analytics":
                                     sale_id = row.get("id")
                                     if pd.notnull(sale_id):
                                         update_sale_payload = {
-                                            "product_name": str(row["product_name"]),
-                                            "gender": str(row["gender"]),
-                                            "art_no": str(row["art_no"]),
-                                            "size": str(row["size"]),
-                                            "qty": int(row["qty"]),
-                                            "mrp_og": float(row.get("mrp_og", 0.0)),
-                                            "wp": float(row.get("wp", 0.0)),
+                                            "product_name": str(row.get("product_name", "")),
+                                            "gender": str(row.get("gender", "")),
+                                            "art_no": str(row.get("art_no", "")),
+                                            "size": str(row.get("size", "")),
+                                            "qty": int(row.get("qty", 1)),
                                             "price": float(row.get("price", 0.0)),
                                             "payment_mode": str(row.get("payment_mode", "Cash")),
                                         }
@@ -314,11 +318,11 @@ elif menu == "📊 Sales Analytics":
                                     for index, row in to_delete_sales.iterrows():
                                         sale_id = row.get("id")
                                         if pd.notnull(sale_id):
-                                            p_name = str(row["product_name"])
-                                            g_name = str(row["gender"])
-                                            a_no = str(row["art_no"])
-                                            s_size = str(row["size"])
-                                            s_qty = int(row["qty"])
+                                            p_name = str(row.get("product_name", ""))
+                                            g_name = str(row.get("gender", ""))
+                                            a_no = str(row.get("art_no", ""))
+                                            s_size = str(row.get("size", ""))
+                                            s_qty = int(row.get("qty", 1))
 
                                             stock_match = supabase.table("stock").select("*").eq("product_name", p_name).eq("gender", g_name).eq("art_no", a_no).eq("size", s_size).execute()
                                             if stock_match.data:
@@ -334,11 +338,12 @@ elif menu == "📊 Sales Analytics":
                                 except Exception as del_sales_err:
                                     st.error(f"Error deleting sales record: {del_sales_err}")
                 else:
-                    st.dataframe(df_display, use_container_width=True)
+                    # Non-admin view with hidden ID column
+                    df_display_clean = df_display.drop(columns=["id"], errors="ignore")
+                    st.dataframe(df_display_clean, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Error loading analytics: {e}")
-# ---------------------------------------------------------
+        st.error(f"Error loading analytics: {e}")# ---------------------------------------------------------
 # 3. PRODUCT INSIGHTS
 # ---------------------------------------------------------
 elif menu == "🎯 Product Insights(FLD Stocks)":
