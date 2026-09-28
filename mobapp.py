@@ -390,7 +390,7 @@ elif menu == "🎯 Product Insights(FLD Stocks)":
             st.error(f"Error loading low stock: {e}")
 
 # ---------------------------------------------------------
-# 4. QUICK SALE ENTRY (FAST AUTO-FILL WITH DYNAMIC REFRESH)
+# 4. QUICK SALE ENTRY
 # ---------------------------------------------------------
 elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
     st.subheader("Quick Sale Entry")
@@ -417,55 +417,70 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
 
     try:
         stock_res = supabase.table("stock").select("*").execute()
-        stock_list = stock_res.data if stock_res.data else []
-        df_stock = pd.DataFrame(stock_list) if stock_list else pd.DataFrame()
+        df_stock = pd.DataFrame(stock_res.data)
 
         if df_stock.empty:
             st.error("No stock available in database! Please add stock first.")
         else:
-            unique_art_nos = sorted([str(art).strip() for art in df_stock["art_no"].dropna().unique() if str(art).strip() != ""])
+            products_list = list(df_stock["product_name"].dropna().unique())
+            selected_product = st.selectbox(
+                "Product",
+                options=products_list,
+                index=None,
+                placeholder="Select Product...",
+                key="sb_product",
+            )
 
-            # 1. ART NO FIRST
+            sub_1 = pd.DataFrame()
+            gender_list = []
+            if selected_product:
+                sub_1 = df_stock[df_stock["product_name"] == selected_product]
+                gender_list = list(sub_1["gender"].dropna().unique())
+
+            selected_gender = st.selectbox(
+                "Gender",
+                options=gender_list,
+                index=None,
+                placeholder="Select Gender...",
+                key="sb_gender",
+            )
+
+            sub_2 = pd.DataFrame()
+            art_list = []
+            if selected_product and selected_gender and not sub_1.empty:
+                sub_2 = sub_1[sub_1["gender"] == selected_gender]
+                art_list = list(sub_2["art_no"].dropna().unique())
+
             selected_art_no = st.selectbox(
                 "Art No",
-                options=unique_art_nos,
+                options=art_list,
                 index=None,
-                placeholder="Select or Type Art No...",
-                key="qs_art_no",
+                placeholder="Select Art No...",
+                key="sb_art_no",
             )
 
-            # Extract fields dynamically based on selected Art No
-            filtered_by_art = df_stock[df_stock["art_no"].astype(str).str.strip() == str(selected_art_no).strip()] if selected_art_no else pd.DataFrame()
+            sub_3 = pd.DataFrame()
+            size_list = []
+            if selected_product and selected_gender and selected_art_no and not sub_2.empty:
+                sub_3 = sub_2[sub_2["art_no"] == selected_art_no]
+                size_list = list(sub_3["size"].dropna().unique())
 
-            auto_prod = filtered_by_art["product_name"].iloc[0] if not filtered_by_art.empty else ""
-            auto_gender = filtered_by_art["gender"].iloc[0] if not filtered_by_art.empty else ""
-            available_sizes = sorted([str(s).strip() for s in filtered_by_art["size"].dropna().unique()]) if not filtered_by_art.empty else []
-
-            # Display Auto-filled Readonly Meta Info
-            col_p, col_g = st.columns(2)
-            with col_p:
-                st.text_input("Product Name", value=auto_prod, disabled=True, key="qs_prod_disp")
-            with col_g:
-                st.text_input("Gender", value=auto_gender, disabled=True, key="qs_gen_disp")
-
-            # 2. SIZE SELECTION
             selected_size = st.selectbox(
-                "Available Size",
-                options=available_sizes,
-                index=0 if len(available_sizes) > 0 else None,
+                "Size",
+                options=size_list,
+                index=None,
                 placeholder="Select Size...",
-                key="qs_size",
+                key="sb_size",
             )
 
-            # Details calculation
             available_qty = 0
             mrp_og_val = 0.0
             wp_val = 0.0
             mrp_d_val = 0.0
             selected_item = None
 
-            if selected_art_no and selected_size and not filtered_by_art.empty:
-                matched_rows = filtered_by_art[filtered_by_art["size"].astype(str).str.strip() == str(selected_size).strip()]
+            if selected_product and selected_gender and selected_art_no and selected_size and not sub_3.empty:
+                matched_rows = sub_3[sub_3["size"] == selected_size]
                 if not matched_rows.empty:
                     selected_item = matched_rows.iloc[0]
                     available_qty = selected_item.get("qty", 0)
@@ -473,9 +488,8 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     wp_val = float(selected_item.get("wp", 0.0))
                     mrp_d_val = float(selected_item.get("mrp_d", 0.0))
 
-                    st.info(f"⚡ Available Qty: **{available_qty}** | Wholesale Price (WP): **₹{wp_val:.2f}** | MRP: **₹{mrp_og_val:.2f}**")
+                    st.info(f"Available Qty: **{available_qty}** | Original MRP: **₹{mrp_og_val}** | Wholesale Price (WP): **₹{wp_val}** | Duplicate MRP (MRP D): **₹{mrp_d_val}**")
 
-            # Sale Entry Input Form
             with st.form("exact_quick_sale_form"):
                 col_qty, col_price, col_pay = st.columns(3)
 
@@ -485,7 +499,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         min_value=1,
                         max_value=max(1, int(available_qty)),
                         value=1,
-                        key="qs_num_qty",
+                        key="num_qty",
                     )
 
                 with col_price:
@@ -493,25 +507,25 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         "Selling Price (MRP D)",
                         min_value=0.0,
                         value=mrp_d_val,
-                        key="qs_num_price",
+                        key="num_price",
                     )
 
                 with col_pay:
-                    payment_mode = st.radio("Payment Mode", options=["Cash", "UPI"], horizontal=True, key="qs_pay_mode")
+                    payment_mode = st.radio("Payment", options=["Cash", "UPI"], horizontal=True)
 
-                sale_date = st.date_input("Sale Date", value=get_ist_time().date(), key="qs_sale_date")
+                sale_date = st.date_input("Sale Date", value=get_ist_time().date())
 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    submit_sale = st.form_submit_button("💾 Record Sale", type="primary")
+                    submit_sale = st.form_submit_button("Sale")
                 with col_btn2:
-                    generate_qr_btn = st.form_submit_button("📱 Generate Bill QR")
+                    generate_qr_btn = st.form_submit_button("Generate QR")
 
             if submit_sale or generate_qr_btn:
-                if not (selected_art_no and selected_size):
-                    st.error("Please select Art No and Size first!")
+                if not (selected_product and selected_gender and selected_art_no and selected_size):
+                    st.error("Please select Product, Gender, Art No, and Size first!")
                 elif selected_item is None:
-                    st.error("Selected Art No & Size item not found in stock!")
+                    st.error("Selected item not found in stock!")
                 else:
                     now_time = get_ist_time().time()
                     custom_datetime = (
@@ -521,8 +535,8 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     )
 
                     sale_data = {
-                        "product_name": auto_prod,
-                        "gender": auto_gender,
+                        "product_name": selected_product,
+                        "gender": selected_gender,
                         "art_no": selected_art_no,
                         "size": str(selected_size),
                         "qty": int(sell_qty),
@@ -539,12 +553,12 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                         new_qty = max(0, int(available_qty) - int(sell_qty))
                         supabase.table("stock").update({"qty": new_qty}).eq("id", selected_item["id"]).execute()
 
-                        st.success(f"✅ Sale Recorded ({payment_mode}) & Stock Updated!")
+                        st.success(f"Sale Recorded ({payment_mode}) & Stock Deducted Successfully!")
 
                     if generate_qr_btn or submit_sale:
                         bill_details = (
                             f"FAYAS FOOTWEAR\nDate: {sale_date.strftime('%d/%m/%Y')}\n"
-                            f"Item: {auto_prod} ({auto_gender})\n"
+                            f"Item: {selected_product} ({selected_gender})\n"
                             f"Art: {selected_art_no} | Size: {selected_size}\n"
                             f"Qty: {sell_qty} x ₹{selling_price}\n"
                             f"Total: ₹{sell_qty * selling_price}\n"
@@ -628,10 +642,11 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     except Exception as e:
                         st.error(f"Failed to add stock: {e}")
 
-    # --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
+# --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
     with tab_excel:
         st.write("### 📤 Upload Excel or CSV File")
 
+        # Sample Template Dataframe
         default_template_df = pd.DataFrame([
             {"product_name": "Walkaroo", "gender": "Gents", "art_no": "BX 2618", "size": "7", "qty": 10, "mrp_og": 399.00, "wp": 220.00, "mrp_d": 399.00},
             {"product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00}
@@ -656,6 +671,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 use_container_width=True
             )
 
+# Handle File Upload
         if uploaded_file is not None:
             try:
                 if uploaded_file.name.endswith(".csv"):
@@ -663,8 +679,10 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 else:
                     df_upload = pd.read_excel(uploaded_file)
 
+                # Standardize column headers
                 df_upload.columns = [str(col).strip().lower().replace("-", "_").replace(".", "_") for col in df_upload.columns]
 
+                # Flexible Column Mapping
                 col_mapping = {
                     'product_name': 'product_name', 'productname': 'product_name', 'product': 'product_name',
                     'gender': 'gender',
@@ -682,6 +700,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     renamed_cols[col] = col_mapping.get(clean_c, clean_c)
                 df_upload.rename(columns=renamed_cols, inplace=True)
 
+                # Standard Data Cleaning
                 df_upload["product_name"] = df_upload.get("product_name", "").fillna("").astype(str)
                 df_upload["gender"] = df_upload.get("gender", "Gents").fillna("Gents").astype(str)
                 df_upload["art_no"] = df_upload.get("art_no", "").fillna("").astype(str)
@@ -689,6 +708,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 df_upload["qty"] = pd.to_numeric(df_upload.get("qty", 1), errors='coerce').fillna(1).astype(int)
                 df_upload["mrp_og"] = pd.to_numeric(df_upload.get("mrp_og", 0.0), errors='coerce').fillna(0.0).astype(float)
 
+                # Dynamic Calculation Logic for Wholesale Price (wp = MRP - 33%)
                 def process_wp(row):
                     val = row.get("wp")
                     if pd.notnull(val) and str(val).strip() != "" and float(val) > 0:
@@ -696,6 +716,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     mrp = float(row.get("mrp_og", 0.0))
                     return round(mrp * (1 - 0.33), 2)
 
+                # Dynamic Calculation Logic for Duplicate MRP (mrp_d = MRP + 50 RS)
                 def process_mrp_d(row):
                     val = row.get("mrp_d")
                     if pd.notnull(val) and str(val).strip() != "" and float(val) > 0:
@@ -711,11 +732,17 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
             except Exception as file_err:
                 st.error(f"Error reading file: {file_err}")
 
+            except Exception as file_err:
+                st.error(f"Error reading file: {file_err}")
+
+        # Initialize Session State DataFrame Safely
         if "master_stock_df" not in st.session_state or not isinstance(st.session_state.master_stock_df, pd.DataFrame):
             st.session_state.master_stock_df = default_template_df.copy()
 
         st.write("### 🔍 Live Editable Table Template")
+        st.caption("💡 Direct-a values-a change panni `Sync` pannaலாம் or new Excel upload pannaலாம்.")
 
+        # Display Data Editor
         updated_df = st.data_editor(
             st.session_state.master_stock_df,
             column_config={
@@ -747,6 +774,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
 
         st.divider()
 
+        # Database Sync Button
         if st.button("🚀 Upload & Sync All to Database", type="primary"):
             final_upload_df = pd.DataFrame(updated_df)
             
