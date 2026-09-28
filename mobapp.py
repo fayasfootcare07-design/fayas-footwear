@@ -390,7 +390,7 @@ elif menu == "🎯 Product Insights(FLD Stocks)":
             st.error(f"Error loading low stock: {e}")
 
 # ---------------------------------------------------------
-# 4. QUICK SALE ENTRY
+# 4. QUICK SALE ENTRY (UPDATED: ART NO FIRST & AUTO-FILL)
 # ---------------------------------------------------------
 elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
     st.subheader("Quick Sale Entry")
@@ -417,70 +417,79 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
 
     try:
         stock_res = supabase.table("stock").select("*").execute()
-        df_stock = pd.DataFrame(stock_res.data)
+        stock_list = stock_res.data if stock_res.data else []
+        df_stock = pd.DataFrame(stock_list) if stock_list else pd.DataFrame()
 
         if df_stock.empty:
             st.error("No stock available in database! Please add stock first.")
         else:
-            products_list = list(df_stock["product_name"].dropna().unique())
-            selected_product = st.selectbox(
-                "Product",
-                options=products_list,
-                index=None,
-                placeholder="Select Product...",
-                key="sb_product",
-            )
+            # Get unique Art Numbers list
+            unique_art_nos = sorted([str(art).strip() for art in df_stock["art_no"].dropna().unique() if str(art).strip() != ""])
 
-            sub_1 = pd.DataFrame()
-            gender_list = []
-            if selected_product:
-                sub_1 = df_stock[df_stock["product_name"] == selected_product]
-                gender_list = list(sub_1["gender"].dropna().unique())
-
-            selected_gender = st.selectbox(
-                "Gender",
-                options=gender_list,
-                index=None,
-                placeholder="Select Gender...",
-                key="sb_gender",
-            )
-
-            sub_2 = pd.DataFrame()
-            art_list = []
-            if selected_product and selected_gender and not sub_1.empty:
-                sub_2 = sub_1[sub_1["gender"] == selected_gender]
-                art_list = list(sub_2["art_no"].dropna().unique())
-
+            # 1. ART NO (MAIN FIRST SELECTION)
             selected_art_no = st.selectbox(
                 "Art No",
-                options=art_list,
+                options=unique_art_nos,
                 index=None,
                 placeholder="Select Art No...",
                 key="sb_art_no",
             )
 
-            sub_3 = pd.DataFrame()
-            size_list = []
-            if selected_product and selected_gender and selected_art_no and not sub_2.empty:
-                sub_3 = sub_2[sub_2["art_no"] == selected_art_no]
-                size_list = list(sub_3["size"].dropna().unique())
+            # Setup defaults
+            default_prod = None
+            default_gender = None
+            available_sizes = []
+            available_qty = 0
+            mrp_og_val = 0.0
+            wp_val = 0.0
+            mrp_d_val = 0.0
 
+            filtered_by_art = pd.DataFrame()
+
+            if selected_art_no:
+                filtered_by_art = df_stock[df_stock["art_no"].astype(str).str.strip() == selected_art_no]
+                if not filtered_by_art.empty:
+                    default_prod = filtered_by_art["product_name"].iloc[0]
+                    default_gender = filtered_by_art["gender"].iloc[0]
+                    available_sizes = sorted([str(s).strip() for s in filtered_by_art["size"].dropna().unique()])
+
+            # 2. PRODUCT (AUTO-FILLED BASED ON ART NO)
+            products_list = sorted(df_stock["product_name"].dropna().unique().tolist())
+            prod_idx = products_list.index(default_prod) if default_prod in products_list else None
+
+            selected_product = st.selectbox(
+                "Product",
+                options=products_list,
+                index=prod_idx,
+                placeholder="Select Product...",
+                key="sb_product",
+            )
+
+            # 3. GENDER (AUTO-FILLED BASED ON ART NO)
+            gender_list = sorted(df_stock["gender"].dropna().unique().tolist())
+            gender_idx = gender_list.index(default_gender) if default_gender in gender_list else None
+
+            selected_gender = st.selectbox(
+                "Gender",
+                options=gender_list,
+                index=gender_idx,
+                placeholder="Select Gender...",
+                key="sb_gender",
+            )
+
+            # 4. SIZE (FILTERED ACCORDING TO SELECTED ART NO)
+            sizes_to_show = available_sizes if available_sizes else sorted([str(s).strip() for s in df_stock["size"].dropna().unique()])
             selected_size = st.selectbox(
                 "Size",
-                options=size_list,
+                options=sizes_to_show,
                 index=None,
                 placeholder="Select Size...",
                 key="sb_size",
             )
 
-            available_qty = 0
-            mrp_og_val = 0.0
-            wp_val = 0.0
-            mrp_d_val = 0.0
             selected_item = None
-
-            if selected_product and selected_gender and selected_art_no and selected_size and not sub_3.empty:
-                matched_rows = sub_3[sub_3["size"] == selected_size]
+            if selected_art_no and selected_size and not filtered_by_art.empty:
+                matched_rows = filtered_by_art[filtered_by_art["size"].astype(str).str.strip() == selected_size]
                 if not matched_rows.empty:
                     selected_item = matched_rows.iloc[0]
                     available_qty = selected_item.get("qty", 0)
@@ -488,7 +497,7 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     wp_val = float(selected_item.get("wp", 0.0))
                     mrp_d_val = float(selected_item.get("mrp_d", 0.0))
 
-                    st.info(f"Available Qty: **{available_qty}** | Original MRP: **₹{mrp_og_val}** | Wholesale Price (WP): **₹{wp_val}** | Duplicate MRP (MRP D): **₹{mrp_d_val}**")
+                    st.info(f"Available Qty: **{available_qty}** | Original MRP: **₹{mrp_og_val:.2f}** | Wholesale Price (WP): **₹{wp_val:.2f}** | Duplicate MRP (MRP D): **₹{mrp_d_val:.2f}**")
 
             with st.form("exact_quick_sale_form"):
                 col_qty, col_price, col_pay = st.columns(3)
@@ -522,10 +531,10 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
                     generate_qr_btn = st.form_submit_button("Generate QR")
 
             if submit_sale or generate_qr_btn:
-                if not (selected_product and selected_gender and selected_art_no and selected_size):
-                    st.error("Please select Product, Gender, Art No, and Size first!")
+                if not (selected_art_no and selected_size):
+                    st.error("Please select Art No and Size first!")
                 elif selected_item is None:
-                    st.error("Selected item not found in stock!")
+                    st.error("Selected Art No & Size item not found in stock!")
                 else:
                     now_time = get_ist_time().time()
                     custom_datetime = (
@@ -642,11 +651,10 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     except Exception as e:
                         st.error(f"Failed to add stock: {e}")
 
-# --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
+    # --- TAB 2: BULK EXCEL / CSV IMPORT WITH PREVIEW & EDIT ---
     with tab_excel:
         st.write("### 📤 Upload Excel or CSV File")
 
-        # Sample Template Dataframe
         default_template_df = pd.DataFrame([
             {"product_name": "Walkaroo", "gender": "Gents", "art_no": "BX 2618", "size": "7", "qty": 10, "mrp_og": 399.00, "wp": 220.00, "mrp_d": 399.00},
             {"product_name": "Mark", "gender": "Gents", "art_no": "2287", "size": "8", "qty": 12, "mrp_og": 450.00, "wp": 250.00, "mrp_d": 450.00}
@@ -671,7 +679,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 use_container_width=True
             )
 
-# Handle File Upload
+        # Handle File Upload
         if uploaded_file is not None:
             try:
                 if uploaded_file.name.endswith(".csv"):
@@ -728,9 +736,6 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 df_upload["mrp_d"] = df_upload.apply(process_mrp_d, axis=1)
 
                 st.session_state.master_stock_df = df_upload
-
-            except Exception as file_err:
-                st.error(f"Error reading file: {file_err}")
 
             except Exception as file_err:
                 st.error(f"Error reading file: {file_err}")
