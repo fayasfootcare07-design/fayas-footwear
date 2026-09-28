@@ -213,7 +213,7 @@ if menu == "📦 Live Stock":
         st.error(f"Error fetching stock: {e}")
 
 # ---------------------------------------------------------
-# 2. SALES ANALYTICS (WITH DELETE & AUTO RESTOCK)
+# 2. SALES ANALYTICS (EDITABLE ON DOUBLE CLICK & SAVE / DELETE)
 # ---------------------------------------------------------
 elif menu == "📊 Sales Analytics":
     st.subheader("📊 Sales Analytics & Profitability")
@@ -269,49 +269,75 @@ elif menu == "📊 Sales Analytics":
                 if st.session_state.get("admin_logged_in", False):
                     df_display.insert(0, "Select", False)
 
+                    # st.data_editor enables double-click edit on table cells
                     edited_sales_df = st.data_editor(
                         df_display,
                         key="sales_editor",
-                        disabled=[c for c in display_cols if c != "Select"],
+                        disabled=["id", "created_at"],  # id and created_at are locked
                         use_container_width=True,
                     )
 
-                    if st.button("🗑️ Delete Selected Sales Record(s)", type="secondary"):
-                        to_delete_sales = edited_sales_df[edited_sales_df["Select"] == True]
+                    col_s1, col_s2 = st.columns([1, 1])
 
-                        if to_delete_sales.empty:
-                            st.warning("⚠️ Please select at least one sales record to delete!")
-                        else:
+                    with col_s1:
+                        if st.button("💾 Save Edits & Update Sales Data", type="primary"):
                             try:
-                                delete_count = 0
-                                for index, row in to_delete_sales.iterrows():
+                                for index, row in edited_sales_df.iterrows():
                                     sale_id = row.get("id")
                                     if pd.notnull(sale_id):
-                                        p_name = str(row["product_name"])
-                                        g_name = str(row["gender"])
-                                        a_no = str(row["art_no"])
-                                        s_size = str(row["size"])
-                                        s_qty = int(row["qty"])
-
-                                        stock_match = supabase.table("stock").select("*").eq("product_name", p_name).eq("gender", g_name).eq("art_no", a_no).eq("size", s_size).execute()
-                                        if stock_match.data:
-                                            stk_item = stock_match.data[0]
-                                            restocked_qty = int(stk_item.get("qty", 0)) + s_qty
-                                            supabase.table("stock").update({"qty": restocked_qty}).eq("id", stk_item["id"]).execute()
-
-                                        supabase.table("sales").delete().eq("id", sale_id).execute()
-                                        delete_count += 1
-
-                                st.success(f"🗑️ Successfully deleted {delete_count} sale entry(s) and restocked quantity back to inventory!")
+                                        update_sale_payload = {
+                                            "product_name": str(row["product_name"]),
+                                            "gender": str(row["gender"]),
+                                            "art_no": str(row["art_no"]),
+                                            "size": str(row["size"]),
+                                            "qty": int(row["qty"]),
+                                            "mrp_og": float(row.get("mrp_og", 0.0)),
+                                            "wp": float(row.get("wp", 0.0)),
+                                            "price": float(row.get("price", 0.0)),
+                                            "payment_mode": str(row.get("payment_mode", "Cash")),
+                                        }
+                                        supabase.table("sales").update(update_sale_payload).eq("id", sale_id).execute()
+                                st.success("✅ Sales record updated successfully!")
                                 st.rerun()
-                            except Exception as del_sales_err:
-                                st.error(f"Error deleting sales record: {del_sales_err}")
+                            except Exception as save_sale_err:
+                                st.error(f"Error updating sales data: {save_sale_err}")
+
+                    with col_s2:
+                        if st.button("🗑️ Delete Selected Sales Record(s)", type="secondary"):
+                            to_delete_sales = edited_sales_df[edited_sales_df["Select"] == True]
+
+                            if to_delete_sales.empty:
+                                st.warning("⚠️ Please select at least one sales record to delete!")
+                            else:
+                                try:
+                                    delete_count = 0
+                                    for index, row in to_delete_sales.iterrows():
+                                        sale_id = row.get("id")
+                                        if pd.notnull(sale_id):
+                                            p_name = str(row["product_name"])
+                                            g_name = str(row["gender"])
+                                            a_no = str(row["art_no"])
+                                            s_size = str(row["size"])
+                                            s_qty = int(row["qty"])
+
+                                            stock_match = supabase.table("stock").select("*").eq("product_name", p_name).eq("gender", g_name).eq("art_no", a_no).eq("size", s_size).execute()
+                                            if stock_match.data:
+                                                stk_item = stock_match.data[0]
+                                                restocked_qty = int(stk_item.get("qty", 0)) + s_qty
+                                                supabase.table("stock").update({"qty": restocked_qty}).eq("id", stk_item["id"]).execute()
+
+                                            supabase.table("sales").delete().eq("id", sale_id).execute()
+                                            delete_count += 1
+
+                                    st.success(f"🗑️ Successfully deleted {delete_count} sale entry(s) and restocked quantity back to inventory!")
+                                    st.rerun()
+                                except Exception as del_sales_err:
+                                    st.error(f"Error deleting sales record: {del_sales_err}")
                 else:
                     st.dataframe(df_display, use_container_width=True)
 
     except Exception as e:
         st.error(f"Error loading analytics: {e}")
-
 # ---------------------------------------------------------
 # 3. PRODUCT INSIGHTS
 # ---------------------------------------------------------
