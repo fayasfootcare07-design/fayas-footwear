@@ -875,5 +875,24 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     st.warning(f"⚠️ Skipped {error_count} invalid rows.")
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
+# ---------------------------------------------------------
+# 6. NOTES SECTION (WITH 3 BUTTONS)
+# ---------------------------------------------------------
+elif menu == "📝 Notes":
+    st.subheader("📝 Notes")
+    
+    # 3 Buttons horizontal alignment-il kaanikkum
+    col1, col2, col3 = st.columns(3)
 
+    with col1:
+        if st.button("Button 1", use_container_width=True):
+            st.info("Button 1 Clicked!")
+
+    with col2:
+        if st.button("Button 2", use_container_width=True):
+            st.info("Button 2 Clicked!")
+
+    with col3:
+        if st.button("Button 3", use_container_width=True):
+            st.info("Button 3 Clicked!")
 
