@@ -876,7 +876,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
 # ---------------------------------------------------------
-# 6. NOTES SECTION (PURE STREAMLIT NATIVE CHART - NO EXTERNAL LIBRARIES)
+# 6. NOTES SECTION (PURE STREAMLIT NATIVE - 100% WORKING)
 # ---------------------------------------------------------
 elif menu == "📝 Notes":
     st.subheader("📝 Notes")
@@ -900,7 +900,7 @@ elif menu == "📝 Notes":
 
     st.divider()
 
-    # --- BUTTON 1 FEATURE: NATIVE SALES BAR CHART WITH TEXT & LABELS ---
+    # --- BUTTON 1 FEATURE: NATIVE NATIVE BAR CHART & TABLE ---
     if st.session_state["active_note_tab"] == "Button 1":
         st.write("### 📊 Last 30 Days Sales Bar Chart")
         
@@ -928,12 +928,12 @@ elif menu == "📝 Notes":
                     
                     # Daily Sales Amount total
                     daily_sales = df_30.groupby("date_only")["revenue"].sum().reset_index()
-                    daily_sales["Date"] = daily_sales["date_only"].apply(lambda x: x.strftime("%d/%m"))
-                    daily_sales.rename(columns={"revenue": "Sales Amount"}, inplace=True)
+                    daily_sales["Date (DD/MM)"] = daily_sales["date_only"].apply(lambda x: x.strftime("%d/%m"))
+                    daily_sales.rename(columns={"revenue": "Sales Amount (₹)"}, inplace=True)
 
                     # Metric cards above chart
-                    below_1000_days = (daily_sales["Sales Amount"] < 1000).sum()
-                    total_30_rev = daily_sales["Sales Amount"].sum()
+                    below_1000_days = (daily_sales["Sales Amount (₹)"] < 1000).sum()
+                    total_30_rev = daily_sales["Sales Amount (₹)"].sum()
 
                     m_col1, m_col2 = st.columns(2)
                     with m_col1:
@@ -943,44 +943,23 @@ elif menu == "📝 Notes":
 
                     st.divider()
 
-                    # Custom HTML/CSS Bar Chart (Guaranteed to show amounts & date axis)
-                    max_val = daily_sales["Sales Amount"].max() if daily_sales["Sales Amount"].max() > 0 else 1
-                    
-                    chart_html = """
-                    <div style="display: flex; align-items: flex-end; justify-content: space-around; height: 320px; padding: 20px 10px; border-bottom: 2px solid #333; background: #fafafa; border-radius: 8px;">
-                    """
-                    
-                    for index, row in daily_sales.iterrows():
-                        amt = row["Sales Amount"]
-                        date_str = row["Date"]
-                        height_pct = max(10, int((amt / max_val) * 220))  # Bar height in px
-                        
-                        if amt < 1000:
-                            bg_color = "#e53935" # Red
-                        elif amt < 2000:
-                            bg_color = "#1e88e5" # Blue
-                        else:
-                            bg_color = "#4caf50" # Green
+                    # Direct Streamlit Bar Chart
+                    chart_data = daily_sales.set_index("Date (DD/MM)")["Sales Amount (₹)"]
+                    st.bar_chart(chart_data, x_label="Date (DD/MM)", y_label="Sales Amount (₹)")
 
-                        chart_html += f"""
-                        <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
-                            <span style="font-size: 11px; font-weight: bold; color: #111; margin-bottom: 4px;">₹{int(amt)}</span>
-                            <div style="background-color: {bg_color}; height: {height_pct}px; width: 80%; max-width: 35px; border-radius: 4px 4px 0 0;"></div>
-                            <span style="font-size: 11px; font-weight: bold; color: #444; margin-top: 8px; transform: rotate(-45deg); display: inline-block;">{date_str}</span>
-                        </div>
-                        """
+                    # Detailed Clear Table with Exact Amounts & Date Axis
+                    st.write("#### 📅 Daily Sales Amount Summary")
                     
-                    chart_html += "</div>"
+                    daily_sales["Status"] = daily_sales["Sales Amount (₹)"].apply(
+                        lambda x: "🔴 Low (< ₹1000)" if x < 1000 else ("🔵 Medium" if x < 2000 else "🟢 High (≥ ₹2000)")
+                    )
+                    daily_sales["Formatted Amount"] = daily_sales["Sales Amount (₹)"].apply(lambda x: f"₹{x:,.2f}")
                     
-                    # Axis Labels
-                    st.markdown(chart_html, unsafe_allow_html=True)
-                    st.caption("📍 **X-Axis:** Date (DD/MM) | 📍 **Y-Axis Height:** Amount (₹)")
-
-                    # Detailed Data Summary Table
-                    with st.expander("📋 Detailed Daily Breakdown"):
-                        daily_sales["Status"] = daily_sales["Sales Amount"].apply(lambda x: "🔴 Low (< ₹1000)" if x < 1000 else ("🔵 Medium" if x < 2000 else "🟢 High"))
-                        daily_sales["Sales Amount"] = daily_sales["Sales Amount"].apply(lambda x: f"₹{x:,.2f}")
-                        st.dataframe(daily_sales[["Date", "Sales Amount", "Status"]], use_container_width=True)
+                    st.dataframe(
+                        daily_sales[["Date (DD/MM)", "Formatted Amount", "Status"]], 
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
         except Exception as e:
             st.error(f"Chart render pannuvadhil sikkal: {e}")
