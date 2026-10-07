@@ -876,7 +876,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
 # ---------------------------------------------------------
-# 6. NOTES SECTION (GUARANTEED VISIBLE LABELS USING MATPLOTLIB)
+# 6. NOTES SECTION (PURE STREAMLIT NATIVE CHART - NO EXTERNAL LIBRARIES)
 # ---------------------------------------------------------
 elif menu == "📝 Notes":
     st.subheader("📝 Notes")
@@ -900,7 +900,7 @@ elif menu == "📝 Notes":
 
     st.divider()
 
-    # --- BUTTON 1 FEATURE: SALES BAR CHART ---
+    # --- BUTTON 1 FEATURE: NATIVE SALES BAR CHART WITH TEXT & LABELS ---
     if st.session_state["active_note_tab"] == "Button 1":
         st.write("### 📊 Last 30 Days Sales Bar Chart")
         
@@ -911,8 +911,6 @@ elif menu == "📝 Notes":
             if df_sales.empty:
                 st.info("Sales records kaanavaillai!")
             else:
-                import matplotlib.pyplot as plt
-
                 # Timezone & Date filtering
                 df_sales["datetime_ist"] = pd.to_datetime(df_sales["created_at"]).dt.tz_convert("Asia/Kolkata")
                 df_sales["date_only"] = df_sales["datetime_ist"].dt.date
@@ -941,50 +939,48 @@ elif menu == "📝 Notes":
                     with m_col1:
                         st.metric("💰 Total Revenue (30 Days)", f"₹{total_30_rev:,.2f}")
                     with m_col2:
-                        st.metric("🔴 Low Sales Days (< ₹1000)", f"{below_1000_days} Days")
+                        st.metric("🔴 Below ₹1000 Sales Days", f"{below_1000_days} Days")
 
                     st.divider()
 
-                    # Color mapping list
-                    bar_colors = []
-                    for amt in daily_sales["Sales Amount"]:
-                        if amt < 1000:
-                            bar_colors.append("#e53935")  # Red
-                        elif amt < 2000:
-                            bar_colors.append("#1e88e5")  # Blue
-                        else:
-                            bar_colors.append("#4caf50")  # Green
-
-                    # Plotting using Matplotlib
-                    fig, ax = plt.subplots(figsize=(10, 5))
-                    bars = ax.bar(daily_sales["Date"], daily_sales["Sales Amount"], color=bar_colors)
-
-                    # Add text values on top of bars
-                    for bar in bars:
-                        height = bar.get_height()
-                        ax.annotate(
-                            f"₹{int(height)}",
-                            xy=(bar.get_x() + bar.get_width() / 2, height),
-                            xytext=(0, 3),  # 3 points vertical offset
-                            textcoords="offset points",
-                            ha="center", va="bottom",
-                            fontsize=9, fontweight="bold", color="black"
-                        )
-
-                    # Explicit Labels & Formatting
-                    ax.set_xlabel("Date (DD/MM)", fontsize=11, fontweight="bold", labelpad=10)
-                    ax.set_ylabel("Sales Amount (₹)", fontsize=11, fontweight="bold", labelpad=10)
-                    ax.set_title("30 Days Sales Trend", fontsize=13, fontweight="bold", pad=15)
-                    plt.xticks(rotation=45, ha="right", fontsize=9, fontweight="bold")
-                    plt.yticks(fontsize=9, fontweight="bold")
+                    # Custom HTML/CSS Bar Chart (Guaranteed to show amounts & date axis)
+                    max_val = daily_sales["Sales Amount"].max() if daily_sales["Sales Amount"].max() > 0 else 1
                     
-                    # Remove top & right borders for clean look
-                    ax.spines['top'].set_visible(False)
-                    ax.spines['right'].set_visible(False)
-                    ax.grid(axis='y', linestyle='--', alpha=0.5)
+                    chart_html = """
+                    <div style="display: flex; align-items: flex-end; justify-content: space-around; height: 320px; padding: 20px 10px; border-bottom: 2px solid #333; background: #fafafa; border-radius: 8px;">
+                    """
+                    
+                    for index, row in daily_sales.iterrows():
+                        amt = row["Sales Amount"]
+                        date_str = row["Date"]
+                        height_pct = max(10, int((amt / max_val) * 220))  # Bar height in px
+                        
+                        if amt < 1000:
+                            bg_color = "#e53935" # Red
+                        elif amt < 2000:
+                            bg_color = "#1e88e5" # Blue
+                        else:
+                            bg_color = "#4caf50" # Green
 
-                    plt.tight_layout()
-                    st.pyplot(fig)
+                        chart_html += f"""
+                        <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+                            <span style="font-size: 11px; font-weight: bold; color: #111; margin-bottom: 4px;">₹{int(amt)}</span>
+                            <div style="background-color: {bg_color}; height: {height_pct}px; width: 80%; max-width: 35px; border-radius: 4px 4px 0 0;"></div>
+                            <span style="font-size: 11px; font-weight: bold; color: #444; margin-top: 8px; transform: rotate(-45deg); display: inline-block;">{date_str}</span>
+                        </div>
+                        """
+                    
+                    chart_html += "</div>"
+                    
+                    # Axis Labels
+                    st.markdown(chart_html, unsafe_allow_html=True)
+                    st.caption("📍 **X-Axis:** Date (DD/MM) | 📍 **Y-Axis Height:** Amount (₹)")
+
+                    # Detailed Data Summary Table
+                    with st.expander("📋 Detailed Daily Breakdown"):
+                        daily_sales["Status"] = daily_sales["Sales Amount"].apply(lambda x: "🔴 Low (< ₹1000)" if x < 1000 else ("🔵 Medium" if x < 2000 else "🟢 High"))
+                        daily_sales["Sales Amount"] = daily_sales["Sales Amount"].apply(lambda x: f"₹{x:,.2f}")
+                        st.dataframe(daily_sales[["Date", "Sales Amount", "Status"]], use_container_width=True)
 
         except Exception as e:
             st.error(f"Chart render pannuvadhil sikkal: {e}")
