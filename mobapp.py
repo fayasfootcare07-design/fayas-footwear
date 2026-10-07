@@ -919,3 +919,70 @@ elif menu == "📝 Notes":
 
                 today_date = get_ist_time().date()
                 last_30_days = today_date - timedelta(days=30)
+                
+                df_30 = df_sales[(df_sales["date_only"] >= last_30_days) & (df_sales["date_only"] <= today_date)].copy()
+
+                if df_30.empty:
+                    st.warning("Kadantha 30 naatkalil entha sales-um illai!")
+                else:
+                    # Revenue calculation
+                    df_30["revenue"] = df_30["qty"] * df_30["price"]
+                    
+                    # Daily Sales Amount total
+                    daily_sales = df_30.groupby("date_only")["revenue"].sum().reset_index()
+                    daily_sales["Date"] = daily_sales["date_only"].apply(lambda x: x.strftime("%d/%m/%Y"))
+                    daily_sales.rename(columns={"revenue": "Sales Amount"}, inplace=True)
+
+                    # Explicit Color Category Assignment
+                    def get_color_category(amount):
+                        if amount < 1000:
+                            return "< ₹1000 (Red)"
+                        elif amount < 2000:
+                            return "₹1000 - ₹1999 (Blue)"
+                        else:
+                            return "≥ ₹2000 (Green)"
+
+                    daily_sales["ColorCategory"] = daily_sales["Sales Amount"].apply(get_color_category)
+
+                    # Bar Chart creation with explicit scale domain & range
+                    bars = alt.Chart(daily_sales).mark_bar().encode(
+                        x=alt.X("Date:N", sort=None, title="Date"),
+                        y=alt.Y("Sales Amount:Q", title="Sales Amount (₹)"),
+                        color=alt.Color(
+                            "ColorCategory:N",
+                            scale=alt.Scale(
+                                domain=["< ₹1000 (Red)", "₹1000 - ₹1999 (Blue)", "≥ ₹2000 (Green)"],
+                                range=["#e53935", "#1e88e5", "#4caf50"]
+                            ),
+                            legend=alt.Legend(title="Sales Range")
+                        ),
+                        tooltip=["Date", "Sales Amount"]
+                    )
+
+                    # Text labels on top of each Bar
+                    text = bars.mark_text(
+                        align='center',
+                        baseline='bottom',
+                        dy=-5,
+                        color='black',
+                        fontSize=12
+                    ).encode(
+                        text=alt.Text("Sales Amount:Q", format="₹,.0f")
+                    )
+
+                    # Render combined chart
+                    chart = (bars + text).properties(height=400)
+                    st.altair_chart(chart, use_container_width=True)
+
+                    # Total Revenue Metric
+                    total_30_rev = daily_sales["Sales Amount"].sum()
+                    st.success(f"💰 Total Sales Revenue (Last 30 Days): **₹{total_30_rev:,.2f}**")
+
+        except Exception as e:
+            st.error(f"Chart render pannuvadhil sikkal: {e}")
+
+    elif st.session_state["active_note_tab"] == "Button 2":
+        st.info("Button 2 Clicked!")
+
+    elif st.session_state["active_note_tab"] == "Button 3":
+        st.info("Button 3 Clicked!")
