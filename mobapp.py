@@ -882,7 +882,7 @@ elif menu == "📝 Notes":
     st.subheader("📝 Notes")
     
     if "active_note_tab" not in st.session_state:
-        st.session_state["active_note_tab"] = "Button 1"
+        st.session_state["active_note_tab"] = "Sales"
 
     col1, col2, col3 = st.columns(3)
 
