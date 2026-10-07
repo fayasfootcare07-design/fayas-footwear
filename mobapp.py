@@ -876,7 +876,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
 # ---------------------------------------------------------
-# 6. NOTES SECTION (WITH LAST 30 DAYS SALES BAR CHART & WORKING COLOR RULES)
+# 6. NOTES SECTION (WITH AXIS LABELS & BELOW 1000 METRIC)
 # ---------------------------------------------------------
 elif menu == "📝 Notes":
     st.subheader("📝 Notes")
@@ -900,9 +900,9 @@ elif menu == "📝 Notes":
 
     st.divider()
 
-    # --- BUTTON 1 FEATURE: SALES AMOUNT BAR CHART WITH WORKING COLORS ---
+    # --- BUTTON 1 FEATURE: SALES AMOUNT BAR CHART WITH LABELS ---
     if st.session_state["active_note_tab"] == "Button 1":
-        st.write("### 📊 Last 30 Days Sales Bar Chart (Amount)")
+        st.write("### 📊 Last 30 Days Sales Bar Chart")
         
         try:
             sales_res = supabase.table("sales").select("*").execute()
@@ -933,7 +933,7 @@ elif menu == "📝 Notes":
                     daily_sales["Date"] = daily_sales["date_only"].apply(lambda x: x.strftime("%d/%m/%Y"))
                     daily_sales.rename(columns={"revenue": "Sales Amount"}, inplace=True)
 
-                    # Explicit Color Category Assignment
+                    # Category Color Mapping
                     def get_color_category(amount):
                         if amount < 1000:
                             return "< ₹1000 (Red)"
@@ -944,10 +944,20 @@ elif menu == "📝 Notes":
 
                     daily_sales["ColorCategory"] = daily_sales["Sales Amount"].apply(get_color_category)
 
-                    # Bar Chart creation with explicit scale domain & range
+                    # Metric cards above chart (Total Sales & Days < 1000)
+                    below_1000_days = (daily_sales["Sales Amount"] < 1000).sum()
+                    total_30_rev = daily_sales["Sales Amount"].sum()
+
+                    m_col1, m_col2 = st.columns(2)
+                    with m_col1:
+                        st.metric("💰 Total Revenue (30 Days)", f"₹{total_30_rev:,.2f}")
+                    with m_col2:
+                        st.metric("🔴 Below ₹1000 Sales Days", f"{below_1000_days} Days")
+
+                    # Bar Chart creation with clear X & Y Axis titles
                     bars = alt.Chart(daily_sales).mark_bar().encode(
-                        x=alt.X("Date:N", sort=None, title="Date"),
-                        y=alt.Y("Sales Amount:Q", title="Sales Amount (₹)"),
+                        x=alt.X("Date:N", sort=None, title="Date (DD/MM/YYYY)"),
+                        y=alt.Y("Sales Amount:Q", title="Amount (₹)"),
                         color=alt.Color(
                             "ColorCategory:N",
                             scale=alt.Scale(
@@ -959,13 +969,13 @@ elif menu == "📝 Notes":
                         tooltip=["Date", "Sales Amount"]
                     )
 
-                    # Text labels on top of each Bar
+                    # Amount labels on top of each Bar
                     text = bars.mark_text(
                         align='center',
                         baseline='bottom',
                         dy=-5,
                         color='black',
-                        fontSize=12
+                        fontSize=11
                     ).encode(
                         text=alt.Text("Sales Amount:Q", format="₹,.0f")
                     )
@@ -973,10 +983,6 @@ elif menu == "📝 Notes":
                     # Render combined chart
                     chart = (bars + text).properties(height=400)
                     st.altair_chart(chart, use_container_width=True)
-
-                    # Total Revenue Metric
-                    total_30_rev = daily_sales["Sales Amount"].sum()
-                    st.success(f"💰 Total Sales Revenue (Last 30 Days): **₹{total_30_rev:,.2f}**")
 
         except Exception as e:
             st.error(f"Chart render pannuvadhil sikkal: {e}")
