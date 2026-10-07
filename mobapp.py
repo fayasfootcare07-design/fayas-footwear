@@ -876,23 +876,80 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
 # ---------------------------------------------------------
-# 6. NOTES SECTION (WITH 3 BUTTONS)
+# 6. NOTES SECTION (WITH LAST 30 DAYS BAR CHART IN BUTTON 1)
 # ---------------------------------------------------------
 elif menu == "📝 Notes":
     st.subheader("📝 Notes")
     
-    # 3 Buttons horizontal alignment-il kaanikkum
+    # Track selected button state
+    if "active_note_tab" not in st.session_state:
+        st.session_state["active_note_tab"] = "Button 1"
+
     col1, col2, col3 = st.columns(3)
 
     with col1:
         if st.button("Button 1", use_container_width=True):
-            st.info("Button 1 Clicked!")
+            st.session_state["active_note_tab"] = "Button 1"
 
     with col2:
         if st.button("Button 2", use_container_width=True):
-            st.info("Button 2 Clicked!")
+            st.session_state["active_note_tab"] = "Button 2"
 
     with col3:
         if st.button("Button 3", use_container_width=True):
-            st.info("Button 3 Clicked!")
+            st.session_state["active_note_tab"] = "Button 3"
 
+    st.divider()
+
+    # --- BUTTON 1 FEATURE: LAST 30 DAYS SALES BAR CHART ---
+    if st.session_state["active_note_tab"] == "Button 1":
+        st.write("### 📊 Last 30 Days Sales Bar Chart")
+        
+        try:
+            sales_res = supabase.table("sales").select("*").execute()
+            df_sales = pd.DataFrame(sales_res.data)
+
+            if df_sales.empty:
+                st.info("Sales records kaanavaillai!")
+            else:
+                # IST timezone & Date conversion
+                df_sales["datetime_ist"] = pd.to_datetime(df_sales["created_at"]).dt.tz_convert("Asia/Kolkata")
+                df_sales["date_only"] = df_sales["datetime_ist"].dt.date
+
+                # Filter last 30 days data
+                today_date = get_ist_time().date()
+                last_30_days = today_date - timedelta(days=30)
+                
+                df_30 = df_sales[(df_sales["date_only"] >= last_30_days) & (df_sales["date_only"] <= today_date)].copy()
+
+                if df_30.empty:
+                    st.warning("Kadantha 30 naatkalil entha sales-um illai!")
+                else:
+                    # Calculate daily total pairs sold
+                    daily_sales = df_30.groupby("date_only")["qty"].sum().reset_index()
+                    
+                    # Convert date to display format (DD/MM/YYYY)
+                    daily_sales["Date"] = daily_sales["date_only"].apply(lambda x: x.strftime("%d/%m/%Y"))
+                    daily_sales.rename(columns={"qty": "Pairs Sold"}, inplace=True)
+                    
+                    # Display Streamlit Bar Chart
+                    st.bar_chart(
+                        data=daily_sales,
+                        x="Date",
+                        y="Pairs Sold",
+                        color="#FF4B4B",
+                        use_container_width=True
+                    )
+
+                    # Summary metric
+                    total_30_qty = daily_sales["Pairs Sold"].sum()
+                    st.success(f"📈 Total Pairs Sold in Last 30 Days: **{total_30_qty} Pairs**")
+
+        except Exception as e:
+            st.error(f"Chart render pannuvadhil sikkal: {e}")
+
+    elif st.session_state["active_note_tab"] == "Button 2":
+        st.info("Button 2 Clicked!")
+
+    elif st.session_state["active_note_tab"] == "Button 3":
+        st.info("Button 3 Clicked!")
