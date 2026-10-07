@@ -878,14 +878,17 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
 
 # --- NAVIGATION ROUTING ---
 st.sidebar.title("Navigation")
+
+# Define base menu options
 menu_options = [
     "📦 Live Stock",
     "📊 Sales Analytics",
     "🎯 Product Insights(FLD Stocks)",
-    "📝 Notes",  # New option added here
+    "📝 Notes",
 ]
 
-if st.session_state["admin_logged_in"]:
+# Add admin options if logged in
+if st.session_state.get("admin_logged_in", False):
     menu_options.extend([
         "➕ Quick Sale Entry",
         "📝 Stock Update / New Entry",
