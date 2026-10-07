@@ -953,3 +953,110 @@ elif menu == "📝 Notes":
 
     elif st.session_state["active_note_tab"] == "Button 3":
         st.info("Button 3 Clicked!")
+# ---------------------------------------------------------
+# 6. NOTES SECTION (WITH LAST 30 DAYS SALES BAR CHART & COLOR CONDITIONS)
+# ---------------------------------------------------------
+elif menu == "📝 Notes":
+    st.subheader("📝 Notes")
+    
+    if "active_note_tab" not in st.session_state:
+        st.session_state["active_note_tab"] = "Button 1"
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if st.button("Button 1", use_container_width=True):
+            st.session_state["active_note_tab"] = "Button 1"
+
+    with col2:
+        if st.button("Button 2", use_container_width=True):
+            st.session_state["active_note_tab"] = "Button 2"
+
+    with col3:
+        if st.button("Button 3", use_container_width=True):
+            st.session_state["active_note_tab"] = "Button 3"
+
+    st.divider()
+
+    # --- BUTTON 1 FEATURE: SALES AMOUNT BAR CHART WITH COLOR RULES ---
+    if st.session_state["active_note_tab"] == "Button 1":
+        st.write("### 📊 Last 30 Days Sales Bar Chart (Amount)")
+        
+        try:
+            sales_res = supabase.table("sales").select("*").execute()
+            df_sales = pd.DataFrame(sales_res.data)
+
+            if df_sales.empty:
+                st.info("Sales records kaanavaillai!")
+            else:
+                import altair as alt
+
+                # Timezone & Date filtering
+                df_sales["datetime_ist"] = pd.to_datetime(df_sales["created_at"]).dt.tz_convert("Asia/Kolkata")
+                df_sales["date_only"] = df_sales["datetime_ist"].dt.date
+
+                today_date = get_ist_time().date()
+                last_30_days = today_date - timedelta(days=30)
+                
+                df_30 = df_sales[(df_sales["date_only"] >= last_30_days) & (df_sales["date_only"] <= today_date)].copy()
+
+                if df_30.empty:
+                    st.warning("Kadantha 30 naatkalil entha sales-um illai!")
+                else:
+                    # Revenue calculation
+                    df_30["revenue"] = df_30["qty"] * df_30["price"]
+                    
+                    # Daily Sales Amount total
+                    daily_sales = df_30.groupby("date_only")["revenue"].sum().reset_index()
+                    daily_sales["Date"] = daily_sales["date_only"].apply(lambda x: x.strftime("%d/%m/%Y"))
+                    daily_sales.rename(columns={"revenue": "Sales Amount"}, inplace=True)
+
+                    # Custom Color Condition:
+                    # Below 1000 -> Red (#e53935)
+                    # 1000 to 1999 -> Blue (#1e88e5)
+                    # 2000 & above -> Green (#4caf50)
+                    color_condition = alt.condition(
+                        alt.datum["Sales Amount"] < 1000,
+                        alt.value("#e53935"),  # Red
+                        alt.condition(
+                            alt.datum["Sales Amount"] < 2000,
+                            alt.value("#1e88e5"),  # Blue
+                            alt.value("#4caf50")   # Green
+                        )
+                    )
+
+                    # Bar Chart creation
+                    bars = alt.Chart(daily_sales).mark_bar().encode(
+                        x=alt.X("Date:N", sort=None, title="Date"),
+                        y=alt.Y("Sales Amount:Q", title="Sales Amount (₹)"),
+                        color=color_condition,
+                        tooltip=["Date", "Sales Amount"]
+                    )
+
+                    # Text labels on top of each Bar
+                    text = bars.mark_text(
+                        align='center',
+                        baseline='bottom',
+                        dy=-5,
+                        color='black',
+                        fontSize=12
+                    ).encode(
+                        text=alt.Text("Sales Amount:Q", format="₹,.0f")
+                    )
+
+                    # Render combined chart
+                    chart = (bars + text).properties(height=400)
+                    st.altair_chart(chart, use_container_width=True)
+
+                    # Total Revenue Metric
+                    total_30_rev = daily_sales["Sales Amount"].sum()
+                    st.success(f"💰 Total Sales Revenue (Last 30 Days): **₹{total_30_rev:,.2f}**")
+
+        except Exception as e:
+            st.error(f"Chart render pannuvadhil sikkal: {e}")
+
+    elif st.session_state["active_note_tab"] == "Button 2":
+        st.info("Button 2 Clicked!")
+
+    elif st.session_state["active_note_tab"] == "Button 3":
+        st.info("Button 3 Clicked!")
