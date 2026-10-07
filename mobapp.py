@@ -874,3 +874,21 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                     st.warning(f"⚠️ Skipped {error_count} invalid rows.")
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
+
+
+# --- NAVIGATION ROUTING ---
+st.sidebar.title("Navigation")
+menu_options = [
+    "📦 Live Stock",
+    "📊 Sales Analytics",
+    "🎯 Product Insights(FLD Stocks)",
+    "📝 Notes",  # New option added here
+]
+
+if st.session_state["admin_logged_in"]:
+    menu_options.extend([
+        "➕ Quick Sale Entry",
+        "📝 Stock Update / New Entry",
+    ])
+
+menu = st.sidebar.radio("Go to", menu_options)
