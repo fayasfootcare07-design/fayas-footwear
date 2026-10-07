@@ -876,7 +876,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
 # ---------------------------------------------------------
-# 6. NOTES SECTION (PURE ALTAIR - NO EXTRA PACKAGES REQUIRED)
+# 6. NOTES SECTION (GUARANTEED VISIBLE LABELS USING MATPLOTLIB)
 # ---------------------------------------------------------
 elif menu == "📝 Notes":
     st.subheader("📝 Notes")
@@ -900,7 +900,7 @@ elif menu == "📝 Notes":
 
     st.divider()
 
-    # --- BUTTON 1 FEATURE: SALES AMOUNT BAR CHART ---
+    # --- BUTTON 1 FEATURE: SALES BAR CHART ---
     if st.session_state["active_note_tab"] == "Button 1":
         st.write("### 📊 Last 30 Days Sales Bar Chart")
         
@@ -911,7 +911,7 @@ elif menu == "📝 Notes":
             if df_sales.empty:
                 st.info("Sales records kaanavaillai!")
             else:
-                import altair as alt
+                import matplotlib.pyplot as plt
 
                 # Timezone & Date filtering
                 df_sales["datetime_ist"] = pd.to_datetime(df_sales["created_at"]).dt.tz_convert("Asia/Kolkata")
@@ -930,19 +930,8 @@ elif menu == "📝 Notes":
                     
                     # Daily Sales Amount total
                     daily_sales = df_30.groupby("date_only")["revenue"].sum().reset_index()
-                    daily_sales["Date"] = daily_sales["date_only"].apply(lambda x: x.strftime("%d/%m/%Y"))
+                    daily_sales["Date"] = daily_sales["date_only"].apply(lambda x: x.strftime("%d/%m"))
                     daily_sales.rename(columns={"revenue": "Sales Amount"}, inplace=True)
-
-                    # Category Color Mapping
-                    def get_color_category(amount):
-                        if amount < 1000:
-                            return "< ₹1000 (Red)"
-                        elif amount < 2000:
-                            return "₹1000 - ₹1999 (Blue)"
-                        else:
-                            return "≥ ₹2000 (Green)"
-
-                    daily_sales["ColorCategory"] = daily_sales["Sales Amount"].apply(get_color_category)
 
                     # Metric cards above chart
                     below_1000_days = (daily_sales["Sales Amount"] < 1000).sum()
@@ -952,60 +941,50 @@ elif menu == "📝 Notes":
                     with m_col1:
                         st.metric("💰 Total Revenue (30 Days)", f"₹{total_30_rev:,.2f}")
                     with m_col2:
-                        st.metric("🔴 Below ₹1000 Sales Days", f"{below_1000_days} Days")
+                        st.metric("🔴 Low Sales Days (< ₹1000)", f"{below_1000_days} Days")
 
                     st.divider()
 
-                    # Chart with visible axis & dynamic color coding
-                    bars = alt.Chart(daily_sales).mark_bar().encode(
-                        x=alt.X(
-                            "Date:N", 
-                            sort=None, 
-                            axis=alt.Axis(
-                                title="Date (DD/MM/YYYY)", 
-                                labelAngle=-45, 
-                                labelColor="black", 
-                                titleColor="black",
-                                labelFontSize=11,
-                                titleFontSize=13
-                            )
-                        ),
-                        y=alt.Y(
-                            "Sales Amount:Q", 
-                            axis=alt.Axis(
-                                title="Sales Amount (₹)", 
-                                labelColor="black", 
-                                titleColor="black",
-                                labelFontSize=11,
-                                titleFontSize=13
-                            )
-                        ),
-                        color=alt.Color(
-                            "ColorCategory:N",
-                            scale=alt.Scale(
-                                domain=["< ₹1000 (Red)", "₹1000 - ₹1999 (Blue)", "≥ ₹2000 (Green)"],
-                                range=["#e53935", "#1e88e5", "#4caf50"]
-                            ),
-                            legend=alt.Legend(title="Sales Range")
-                        ),
-                        tooltip=["Date", "Sales Amount"]
-                    )
+                    # Color mapping list
+                    bar_colors = []
+                    for amt in daily_sales["Sales Amount"]:
+                        if amt < 1000:
+                            bar_colors.append("#e53935")  # Red
+                        elif amt < 2000:
+                            bar_colors.append("#1e88e5")  # Blue
+                        else:
+                            bar_colors.append("#4caf50")  # Green
 
-                    # Amount labels on top of bars
-                    text = bars.mark_text(
-                        align='center',
-                        baseline='bottom',
-                        dy=-5,
-                        color='black',
-                        fontSize=11,
-                        fontWeight='bold'
-                    ).encode(
-                        text=alt.Text("Sales Amount:Q", format="₹,.0f")
-                    )
+                    # Plotting using Matplotlib
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    bars = ax.bar(daily_sales["Date"], daily_sales["Sales Amount"], color=bar_colors)
 
-                    # Combine Chart
-                    chart = (bars + text).properties(height=450)
-                    st.altair_chart(chart, use_container_width=True)
+                    # Add text values on top of bars
+                    for bar in bars:
+                        height = bar.get_height()
+                        ax.annotate(
+                            f"₹{int(height)}",
+                            xy=(bar.get_x() + bar.get_width() / 2, height),
+                            xytext=(0, 3),  # 3 points vertical offset
+                            textcoords="offset points",
+                            ha="center", va="bottom",
+                            fontsize=9, fontweight="bold", color="black"
+                        )
+
+                    # Explicit Labels & Formatting
+                    ax.set_xlabel("Date (DD/MM)", fontsize=11, fontweight="bold", labelpad=10)
+                    ax.set_ylabel("Sales Amount (₹)", fontsize=11, fontweight="bold", labelpad=10)
+                    ax.set_title("30 Days Sales Trend", fontsize=13, fontweight="bold", pad=15)
+                    plt.xticks(rotation=45, ha="right", fontsize=9, fontweight="bold")
+                    plt.yticks(fontsize=9, fontweight="bold")
+                    
+                    # Remove top & right borders for clean look
+                    ax.spines['top'].set_visible(False)
+                    ax.spines['right'].set_visible(False)
+                    ax.grid(axis='y', linestyle='--', alpha=0.5)
+
+                    plt.tight_layout()
+                    st.pyplot(fig)
 
         except Exception as e:
             st.error(f"Chart render pannuvadhil sikkal: {e}")
