@@ -876,7 +876,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
 # ---------------------------------------------------------
-# 6. NOTES SECTION (PURE STREAMLIT NATIVE - 100% WORKING)
+# 6. NOTES SECTION (DYNAMIC RED / BLUE / GREEN COLOR CODING)
 # ---------------------------------------------------------
 elif menu == "📝 Notes":
     st.subheader("📝 Notes")
@@ -900,7 +900,7 @@ elif menu == "📝 Notes":
 
     st.divider()
 
-    # --- BUTTON 1 FEATURE: NATIVE NATIVE BAR CHART & TABLE ---
+    # --- BUTTON 1 FEATURE: SALES AMOUNT BAR CHART WITH CUSTOM COLORS ---
     if st.session_state["active_note_tab"] == "Button 1":
         st.write("### 📊 Last 30 Days Sales Bar Chart")
         
@@ -911,6 +911,8 @@ elif menu == "📝 Notes":
             if df_sales.empty:
                 st.info("Sales records kaanavaillai!")
             else:
+                import altair as alt
+
                 # Timezone & Date filtering
                 df_sales["datetime_ist"] = pd.to_datetime(df_sales["created_at"]).dt.tz_convert("Asia/Kolkata")
                 df_sales["date_only"] = df_sales["datetime_ist"].dt.date
@@ -929,11 +931,22 @@ elif menu == "📝 Notes":
                     # Daily Sales Amount total
                     daily_sales = df_30.groupby("date_only")["revenue"].sum().reset_index()
                     daily_sales["Date (DD/MM)"] = daily_sales["date_only"].apply(lambda x: x.strftime("%d/%m"))
-                    daily_sales.rename(columns={"revenue": "Sales Amount (₹)"}, inplace=True)
+                    daily_sales.rename(columns={"revenue": "Sales Amount"}, inplace=True)
+
+                    # Dynamic Color Range Category
+                    def get_color_category(amount):
+                        if amount < 1000:
+                            return "< ₹1000 (Red)"
+                        elif amount < 2000:
+                            return "₹1000 - ₹1999 (Blue)"
+                        else:
+                            return "≥ ₹2000 (Green)"
+
+                    daily_sales["Sales Range"] = daily_sales["Sales Amount"].apply(get_color_category)
 
                     # Metric cards above chart
-                    below_1000_days = (daily_sales["Sales Amount (₹)"] < 1000).sum()
-                    total_30_rev = daily_sales["Sales Amount (₹)"].sum()
+                    below_1000_days = (daily_sales["Sales Amount"] < 1000).sum()
+                    total_30_rev = daily_sales["Sales Amount"].sum()
 
                     m_col1, m_col2 = st.columns(2)
                     with m_col1:
@@ -943,20 +956,58 @@ elif menu == "📝 Notes":
 
                     st.divider()
 
-                    # Direct Streamlit Bar Chart
-                    chart_data = daily_sales.set_index("Date (DD/MM)")["Sales Amount (₹)"]
-                    st.bar_chart(chart_data, x_label="Date (DD/MM)", y_label="Sales Amount (₹)")
-
-                    # Detailed Clear Table with Exact Amounts & Date Axis
-                    st.write("#### 📅 Daily Sales Amount Summary")
-                    
-                    daily_sales["Status"] = daily_sales["Sales Amount (₹)"].apply(
-                        lambda x: "🔴 Low (< ₹1000)" if x < 1000 else ("🔵 Medium" if x < 2000 else "🟢 High (≥ ₹2000)")
+                    # Custom Color Map (Red, Blue, Green)
+                    color_scale = alt.Scale(
+                        domain=["< ₹1000 (Red)", "₹1000 - ₹1999 (Blue)", "≥ ₹2000 (Green)"],
+                        range=["#e53935", "#1e88e5", "#4caf50"]
                     )
-                    daily_sales["Formatted Amount"] = daily_sales["Sales Amount (₹)"].apply(lambda x: f"₹{x:,.2f}")
-                    
+
+                    # Altair Bar Chart with Color Mapping
+                    chart = alt.Chart(daily_sales).mark_bar().encode(
+                        x=alt.X(
+                            "Date (DD/MM):N", 
+                            sort=None, 
+                            axis=alt.Axis(
+                                title="Date (DD/MM)", 
+                                labelAngle=-45,
+                                labelColor="#111111",
+                                titleColor="#111111",
+                                labelFontSize=12,
+                                titleFontSize=13
+                            )
+                        ),
+                        y=alt.Y(
+                            "Sales Amount:Q", 
+                            axis=alt.Axis(
+                                title="Sales Amount (₹)",
+                                labelColor="#111111",
+                                titleColor="#111111",
+                                labelFontSize=12,
+                                titleFontSize=13
+                            )
+                        ),
+                        color=alt.Color(
+                            "Sales Range:N", 
+                            scale=color_scale, 
+                            legend=alt.Legend(title="Sales Range")
+                        ),
+                        tooltip=["Date (DD/MM)", "Sales Amount"]
+                    ).properties(
+                        height=420
+                    ).configure_view(
+                        strokeWidth=0
+                    ).configure_axis(
+                        domainColor="#888888",
+                        gridColor="#eeeeee"
+                    )
+
+                    st.altair_chart(chart, use_container_width=True)
+
+                    # Detailed Summary Table
+                    st.write("#### 📅 Daily Sales Breakdown")
+                    daily_sales["Formatted Amount"] = daily_sales["Sales Amount"].apply(lambda x: f"₹{x:,.2f}")
                     st.dataframe(
-                        daily_sales[["Date (DD/MM)", "Formatted Amount", "Status"]], 
+                        daily_sales[["Date (DD/MM)", "Formatted Amount", "Sales Range"]], 
                         use_container_width=True,
                         hide_index=True
                     )
