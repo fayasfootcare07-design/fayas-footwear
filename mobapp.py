@@ -876,7 +876,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
 # ---------------------------------------------------------
-# 6. NOTES SECTION (WITH EXPLICIT AXIS LABELS & TEXT NUMBERS)
+# 6. NOTES SECTION (plotly VAZHIYA CLEAR AXIS LABELS & TEXT VALUES)
 # ---------------------------------------------------------
 elif menu == "📝 Notes":
     st.subheader("📝 Notes")
@@ -900,7 +900,7 @@ elif menu == "📝 Notes":
 
     st.divider()
 
-    # --- BUTTON 1 FEATURE: BAR CHART WITH FORCED VISIBLE LABELS ---
+    # --- BUTTON 1 FEATURE: SALES AMOUNT BAR CHART ---
     if st.session_state["active_note_tab"] == "Button 1":
         st.write("### 📊 Last 30 Days Sales Bar Chart")
         
@@ -911,7 +911,7 @@ elif menu == "📝 Notes":
             if df_sales.empty:
                 st.info("Sales records kaanavaillai!")
             else:
-                import altair as alt
+                import plotly.express as px
 
                 # Timezone & Date filtering
                 df_sales["datetime_ist"] = pd.to_datetime(df_sales["created_at"]).dt.tz_convert("Asia/Kolkata")
@@ -942,9 +942,10 @@ elif menu == "📝 Notes":
                         else:
                             return "≥ ₹2000 (Green)"
 
-                    daily_sales["ColorCategory"] = daily_sales["Sales Amount"].apply(get_color_category)
+                    daily_sales["Sales Range"] = daily_sales["Sales Amount"].apply(get_color_category)
+                    daily_sales["Formatted Amount"] = daily_sales["Sales Amount"].apply(lambda x: f"₹{x:,.0f}")
 
-                    # Metric cards (Total Sales & Days < 1000)
+                    # Metric cards above chart
                     below_1000_days = (daily_sales["Sales Amount"] < 1000).sum()
                     total_30_rev = daily_sales["Sales Amount"].sum()
 
@@ -956,62 +957,37 @@ elif menu == "📝 Notes":
 
                     st.divider()
 
-                    # Explicit Base Chart with visible axis settings
-                    base = alt.Chart(daily_sales).encode(
-                        x=alt.X(
-                            "Date:N", 
-                            sort=None, 
-                            axis=alt.Axis(
-                                title="Date (DD/MM/YYYY)", 
-                                labelAngle=-45, 
-                                labelFontSize=12, 
-                                titleFontSize=14,
-                                labelPadding=5
-                            )
-                        ),
-                        y=alt.Y(
-                            "Sales Amount:Q", 
-                            axis=alt.Axis(
-                                title="Sales Amount (₹)", 
-                                labelFontSize=12, 
-                                titleFontSize=14
-                            )
-                        )
+                    # Plotly Express Bar Chart with explicit colors and visible text
+                    fig = px.bar(
+                        daily_sales,
+                        x="Date",
+                        y="Sales Amount",
+                        color="Sales Range",
+                        text="Formatted Amount",
+                        color_discrete_map={
+                            "< ₹1000 (Red)": "#e53935",
+                            "₹1000 - ₹1999 (Blue)": "#1e88e5",
+                            "≥ ₹2000 (Green)": "#4caf50"
+                        },
+                        title="30 Days Revenue Trend"
                     )
 
-                    # Bars with dynamic colors
-                    bars = base.mark_bar().encode(
-                        color=alt.Color(
-                            "ColorCategory:N",
-                            scale=alt.Scale(
-                                domain=["< ₹1000 (Red)", "₹1000 - ₹1999 (Blue)", "≥ ₹2000 (Green)"],
-                                range=["#e53935", "#1e88e5", "#4caf50"]
-                            ),
-                            legend=alt.Legend(title="Sales Range", orient="top")
-                        ),
-                        tooltip=["Date", "Sales Amount"]
+                    fig.update_traces(
+                        textposition="outside",
+                        textfont_size=12,
+                        textfont_color="black"
                     )
 
-                    # Visible text on top of bars
-                    text = base.mark_text(
-                        align='center',
-                        baseline='bottom',
-                        dy=-5,
-                        fontSize=12,
-                        fontWeight='bold',
-                        color='black'
-                    ).encode(
-                        text=alt.Text("Sales Amount:Q", format="₹,.0f")
+                    fig.update_layout(
+                        xaxis_title="Date (DD/MM/YYYY)",
+                        yaxis_title="Amount (₹)",
+                        xaxis=dict(tickangle=-45, showgrid=True),
+                        yaxis=dict(showgrid=True),
+                        height=480,
+                        margin=dict(l=40, r=40, t=50, b=80)
                     )
 
-                    # Combine Chart with explicit padding & dimensions
-                    chart = (bars + text).properties(
-                        height=450
-                    ).configure_axis(
-                        grid=True
-                    )
-
-                    st.altair_chart(chart, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True)
 
         except Exception as e:
             st.error(f"Chart render pannuvadhil sikkal: {e}")
