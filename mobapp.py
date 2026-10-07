@@ -876,7 +876,7 @@ elif menu == "📝 Stock Update / New Entry" and st.session_state["admin_logged_
                 st.session_state.master_stock_df = default_template_df.copy()
                 st.rerun()
 # ---------------------------------------------------------
-# 6. NOTES SECTION (WITH AXIS LABELS & BELOW 1000 METRIC)
+# 6. NOTES SECTION (WITH EXPLICIT AXIS LABELS & TEXT NUMBERS)
 # ---------------------------------------------------------
 elif menu == "📝 Notes":
     st.subheader("📝 Notes")
@@ -900,7 +900,7 @@ elif menu == "📝 Notes":
 
     st.divider()
 
-    # --- BUTTON 1 FEATURE: SALES AMOUNT BAR CHART WITH LABELS ---
+    # --- BUTTON 1 FEATURE: BAR CHART WITH FORCED VISIBLE LABELS ---
     if st.session_state["active_note_tab"] == "Button 1":
         st.write("### 📊 Last 30 Days Sales Bar Chart")
         
@@ -944,7 +944,7 @@ elif menu == "📝 Notes":
 
                     daily_sales["ColorCategory"] = daily_sales["Sales Amount"].apply(get_color_category)
 
-                    # Metric cards above chart (Total Sales & Days < 1000)
+                    # Metric cards (Total Sales & Days < 1000)
                     below_1000_days = (daily_sales["Sales Amount"] < 1000).sum()
                     total_30_rev = daily_sales["Sales Amount"].sum()
 
@@ -954,34 +954,63 @@ elif menu == "📝 Notes":
                     with m_col2:
                         st.metric("🔴 Below ₹1000 Sales Days", f"{below_1000_days} Days")
 
-                    # Bar Chart creation with clear X & Y Axis titles
-                    bars = alt.Chart(daily_sales).mark_bar().encode(
-                        x=alt.X("Date:N", sort=None, title="Date (DD/MM/YYYY)"),
-                        y=alt.Y("Sales Amount:Q", title="Amount (₹)"),
+                    st.divider()
+
+                    # Explicit Base Chart with visible axis settings
+                    base = alt.Chart(daily_sales).encode(
+                        x=alt.X(
+                            "Date:N", 
+                            sort=None, 
+                            axis=alt.Axis(
+                                title="Date (DD/MM/YYYY)", 
+                                labelAngle=-45, 
+                                labelFontSize=12, 
+                                titleFontSize=14,
+                                labelPadding=5
+                            )
+                        ),
+                        y=alt.Y(
+                            "Sales Amount:Q", 
+                            axis=alt.Axis(
+                                title="Sales Amount (₹)", 
+                                labelFontSize=12, 
+                                titleFontSize=14
+                            )
+                        )
+                    )
+
+                    # Bars with dynamic colors
+                    bars = base.mark_bar().encode(
                         color=alt.Color(
                             "ColorCategory:N",
                             scale=alt.Scale(
                                 domain=["< ₹1000 (Red)", "₹1000 - ₹1999 (Blue)", "≥ ₹2000 (Green)"],
                                 range=["#e53935", "#1e88e5", "#4caf50"]
                             ),
-                            legend=alt.Legend(title="Sales Range")
+                            legend=alt.Legend(title="Sales Range", orient="top")
                         ),
                         tooltip=["Date", "Sales Amount"]
                     )
 
-                    # Amount labels on top of each Bar
-                    text = bars.mark_text(
+                    # Visible text on top of bars
+                    text = base.mark_text(
                         align='center',
                         baseline='bottom',
                         dy=-5,
-                        color='black',
-                        fontSize=11
+                        fontSize=12,
+                        fontWeight='bold',
+                        color='black'
                     ).encode(
                         text=alt.Text("Sales Amount:Q", format="₹,.0f")
                     )
 
-                    # Render combined chart
-                    chart = (bars + text).properties(height=400)
+                    # Combine Chart with explicit padding & dimensions
+                    chart = (bars + text).properties(
+                        height=450
+                    ).configure_axis(
+                        grid=True
+                    )
+
                     st.altair_chart(chart, use_container_width=True)
 
         except Exception as e:
