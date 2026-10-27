@@ -419,10 +419,10 @@ elif menu == "🎯 Product Insights(FLD Stocks)":
             st.error(f"Error loading low stock: {e}")
 
 # ---------------------------------------------------------
-# 4. QUICK SALE ENTRY
+# 4. QUICK SALE ENTRY (WITH DUAL TABS: STOCK & CUSTOM SALE)
 # ---------------------------------------------------------
 elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
-    st.subheader("Quick Sale Entry")
+    st.subheader("🧾 Quick Sale & Billing Entry")
 
     components.html(
         """
@@ -444,163 +444,234 @@ elif menu == "➕ Quick Sale Entry" and st.session_state["admin_logged_in"]:
         height=0,
     )
 
-    try:
-        stock_res = supabase.table("stock").select("*").execute()
-        df_stock = pd.DataFrame(stock_res.data)
+    sale_tab1, sale_tab2 = st.tabs(["📦 Stock Inventory Sale", "✏️ Direct / Custom Item Billing"])
 
-        if df_stock.empty:
-            st.error("No stock available in database! Please add stock first.")
-        else:
-            products_list = list(df_stock["product_name"].dropna().unique())
-            selected_product = st.selectbox(
-                "Product",
-                options=products_list,
-                index=None,
-                placeholder="Select Product...",
-                key="sb_product",
-            )
+    # TAB 1: STOCK INVENTORY SALE
+    with sale_tab1:
+        try:
+            stock_res = supabase.table("stock").select("*").execute()
+            df_stock = pd.DataFrame(stock_res.data)
 
-            sub_1 = pd.DataFrame()
-            gender_list = []
-            if selected_product:
-                sub_1 = df_stock[df_stock["product_name"] == selected_product]
-                gender_list = list(sub_1["gender"].dropna().unique())
+            if df_stock.empty:
+                st.error("No stock available in database! Please add stock first.")
+            else:
+                products_list = list(df_stock["product_name"].dropna().unique())
+                selected_product = st.selectbox(
+                    "Product",
+                    options=products_list,
+                    index=None,
+                    placeholder="Select Product...",
+                    key="sb_product",
+                )
 
-            selected_gender = st.selectbox(
-                "Gender",
-                options=gender_list,
-                index=None,
-                placeholder="Select Gender...",
-                key="sb_gender",
-            )
+                sub_1 = pd.DataFrame()
+                gender_list = []
+                if selected_product:
+                    sub_1 = df_stock[df_stock["product_name"] == selected_product]
+                    gender_list = list(sub_1["gender"].dropna().unique())
 
-            sub_2 = pd.DataFrame()
-            art_list = []
-            if selected_product and selected_gender and not sub_1.empty:
-                sub_2 = sub_1[sub_1["gender"] == selected_gender]
-                art_list = list(sub_2["art_no"].dropna().unique())
+                selected_gender = st.selectbox(
+                    "Gender",
+                    options=gender_list,
+                    index=None,
+                    placeholder="Select Gender...",
+                    key="sb_gender",
+                )
 
-            selected_art_no = st.selectbox(
-                "Art No",
-                options=art_list,
-                index=None,
-                placeholder="Select Art No...",
-                key="sb_art_no",
-            )
+                sub_2 = pd.DataFrame()
+                art_list = []
+                if selected_product and selected_gender and not sub_1.empty:
+                    sub_2 = sub_1[sub_1["gender"] == selected_gender]
+                    art_list = list(sub_2["art_no"].dropna().unique())
 
-            sub_3 = pd.DataFrame()
-            size_list = []
-            if selected_product and selected_gender and selected_art_no and not sub_2.empty:
-                sub_3 = sub_2[sub_2["art_no"] == selected_art_no]
-                size_list = list(sub_3["size"].dropna().unique())
+                selected_art_no = st.selectbox(
+                    "Art No",
+                    options=art_list,
+                    index=None,
+                    placeholder="Select Art No...",
+                    key="sb_art_no",
+                )
 
-            selected_size = st.selectbox(
-                "Size",
-                options=size_list,
-                index=None,
-                placeholder="Select Size...",
-                key="sb_size",
-            )
+                sub_3 = pd.DataFrame()
+                size_list = []
+                if selected_product and selected_gender and selected_art_no and not sub_2.empty:
+                    sub_3 = sub_2[sub_2["art_no"] == selected_art_no]
+                    size_list = list(sub_3["size"].dropna().unique())
 
-            available_qty = 0
-            mrp_og_val = 0.0
-            wp_val = 0.0
-            mrp_d_val = 0.0
-            selected_item = None
+                selected_size = st.selectbox(
+                    "Size",
+                    options=size_list,
+                    index=None,
+                    placeholder="Select Size...",
+                    key="sb_size",
+                )
 
-            if selected_product and selected_gender and selected_art_no and selected_size and not sub_3.empty:
-                matched_rows = sub_3[sub_3["size"] == selected_size]
-                if not matched_rows.empty:
-                    selected_item = matched_rows.iloc[0]
-                    available_qty = selected_item.get("qty", 0)
-                    mrp_og_val = float(selected_item.get("mrp_og", 0.0))
-                    wp_val = float(selected_item.get("wp", 0.0))
-                    mrp_d_val = float(selected_item.get("mrp_d", 0.0))
+                available_qty = 0
+                mrp_og_val = 0.0
+                wp_val = 0.0
+                mrp_d_val = 0.0
+                selected_item = None
 
-                    st.info(f"Available Qty: **{available_qty}** | Original MRP: **₹{mrp_og_val}** | Wholesale Price (WP): **₹{wp_val}** | Duplicate MRP (MRP D): **₹{mrp_d_val}**")
+                if selected_product and selected_gender and selected_art_no and selected_size and not sub_3.empty:
+                    matched_rows = sub_3[sub_3["size"] == selected_size]
+                    if not matched_rows.empty:
+                        selected_item = matched_rows.iloc[0]
+                        available_qty = selected_item.get("qty", 0)
+                        mrp_og_val = float(selected_item.get("mrp_og", 0.0))
+                        wp_val = float(selected_item.get("wp", 0.0))
+                        mrp_d_val = float(selected_item.get("mrp_d", 0.0))
 
-            with st.form("exact_quick_sale_form"):
-                col_qty, col_price, col_pay = st.columns(3)
+                        st.info(f"Available Qty: **{available_qty}** | Original MRP: **₹{mrp_og_val}** | Wholesale Price (WP): **₹{wp_val}** | Duplicate MRP (MRP D): **₹{mrp_d_val}**")
 
-                with col_qty:
-                    sell_qty = st.number_input(
-                        "Quantity",
-                        min_value=1,
-                        max_value=max(1, int(available_qty)),
-                        value=1,
-                        key="num_qty",
-                    )
+                with st.form("exact_quick_sale_form"):
+                    col_qty, col_price, col_pay = st.columns(3)
 
-                with col_price:
-                    selling_price = st.number_input(
-                        "Selling Price (MRP D)",
-                        min_value=0.0,
-                        value=mrp_d_val,
-                        key="num_price",
-                    )
+                    with col_qty:
+                        sell_qty = st.number_input(
+                            "Quantity",
+                            min_value=1,
+                            max_value=max(1, int(available_qty)),
+                            value=1,
+                            key="num_qty",
+                        )
 
-                with col_pay:
-                    payment_mode = st.radio("Payment", options=["Cash", "UPI"], horizontal=True)
+                    with col_price:
+                        selling_price = st.number_input(
+                            "Selling Price (MRP D)",
+                            min_value=0.0,
+                            value=mrp_d_val,
+                            key="num_price",
+                        )
 
-                sale_date = st.date_input("Sale Date", value=get_ist_time().date())
+                    with col_pay:
+                        payment_mode = st.radio("Payment", options=["Cash", "UPI"], horizontal=True)
 
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    submit_sale = st.form_submit_button("Sale")
-                with col_btn2:
-                    generate_qr_btn = st.form_submit_button("Generate QR")
+                    sale_date = st.date_input("Sale Date", value=get_ist_time().date())
 
-            if submit_sale or generate_qr_btn:
-                if not (selected_product and selected_gender and selected_art_no and selected_size):
-                    st.error("Please select Product, Gender, Art No, and Size first!")
-                elif selected_item is None:
-                    st.error("Selected item not found in stock!")
-                else:
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        submit_sale = st.form_submit_button("Sale")
+                    with col_btn2:
+                        generate_qr_btn = st.form_submit_button("Generate QR")
+
+                if submit_sale or generate_qr_btn:
+                    if not (selected_product and selected_gender and selected_art_no and selected_size):
+                        st.error("Please select Product, Gender, Art No, and Size first!")
+                    elif selected_item is None:
+                        st.error("Selected item not found in stock!")
+                    else:
+                        now_time = get_ist_time().time()
+                        custom_datetime = (
+                            datetime.combine(sale_date, now_time)
+                            .replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+                            .isoformat()
+                        )
+
+                        sale_data = {
+                            "product_name": selected_product,
+                            "gender": selected_gender,
+                            "art_no": selected_art_no,
+                            "size": str(selected_size),
+                            "qty": int(sell_qty),
+                            "mrp_og": mrp_og_val,
+                            "wp": wp_val,
+                            "price": float(selling_price),
+                            "payment_mode": payment_mode,
+                            "created_at": custom_datetime,
+                        }
+
+                        if submit_sale:
+                            supabase.table("sales").insert(sale_data).execute()
+
+                            new_qty = max(0, int(available_qty) - int(sell_qty))
+                            supabase.table("stock").update({"qty": new_qty}).eq("id", selected_item["id"]).execute()
+
+                            st.success(f"Sale Recorded ({payment_mode}) & Stock Deducted Successfully!")
+
+                        if generate_qr_btn or submit_sale:
+                            bill_details = (
+                                f"FAYAS FOOTWEAR\nDate: {sale_date.strftime('%d/%m/%Y')}\n"
+                                f"Item: {selected_product} ({selected_gender})\n"
+                                f"Art: {selected_art_no} | Size: {selected_size}\n"
+                                f"Qty: {sell_qty} x ₹{selling_price}\n"
+                                f"Total: ₹{sell_qty * selling_price}\n"
+                                f"Payment: {payment_mode}"
+                            )
+                            qr_img = generate_qr_code(bill_details)
+
+                            st.write("### 🧾 Digital Receipt")
+                            st.text(bill_details)
+                            st.image(qr_img, caption="Scan QR for Digital Bill Receipt")
+
+        except Exception as e:
+            st.error(f"Error during quick sale: {e}")
+
+    # TAB 2: DIRECT / CUSTOM ITEM BILLING
+    with sale_tab2:
+        st.info("💡 Stock-la illatha / New items-kku direct-a details fill panni bill podalam (Idhu stock table-a affect pannaathu).")
+        
+        with st.form("custom_sale_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                custom_brand = st.text_input("Brand / Product Name", placeholder="e.g., VKC / Paragon")
+                custom_gender = st.selectbox("Category / Gender", ["Gents", "Ladies", "Kids (B)", "Kids (G)", "General"])
+                custom_art_no = st.text_input("Art No / Item Name", placeholder="e.g., VKC 8412")
+            
+            with col2:
+                custom_size = st.text_input("Size", placeholder="e.g., 7, 8, 9")
+                custom_qty = st.number_input("Quantity", min_value=1, value=1, step=1)
+                custom_price = st.number_input("Selling Price (₹)", min_value=0.0, value=0.0, step=10.0)
+                custom_payment = st.radio("Payment Mode", options=["Cash", "UPI"], horizontal=True, key="custom_pay")
+
+            custom_sale_date = st.date_input("Sale Date", value=get_ist_time().date(), key="custom_date")
+            submit_custom = st.form_submit_button("➕ Add Custom Sale & Print Bill", type="primary")
+
+        if submit_custom:
+            if not custom_art_no or not custom_brand:
+                st.error("Please fill Brand Name and Art No / Item Name!")
+            elif custom_price <= 0:
+                st.error("Please enter a valid Selling Price!")
+            else:
+                try:
                     now_time = get_ist_time().time()
                     custom_datetime = (
-                        datetime.combine(sale_date, now_time)
+                        datetime.combine(custom_sale_date, now_time)
                         .replace(tzinfo=ZoneInfo("Asia/Kolkata"))
                         .isoformat()
                     )
 
-                    sale_data = {
-                        "product_name": selected_product,
-                        "gender": selected_gender,
-                        "art_no": selected_art_no,
-                        "size": str(selected_size),
-                        "qty": int(sell_qty),
-                        "mrp_og": mrp_og_val,
-                        "wp": wp_val,
-                        "price": float(selling_price),
-                        "payment_mode": payment_mode,
+                    custom_sale_data = {
+                        "product_name": custom_brand.strip(),
+                        "gender": custom_gender,
+                        "art_no": custom_art_no.strip(),
+                        "size": str(custom_size).strip(),
+                        "qty": int(custom_qty),
+                        "mrp_og": float(custom_price),
+                        "wp": 0.0,
+                        "price": float(custom_price),
+                        "payment_mode": custom_payment,
                         "created_at": custom_datetime,
                     }
 
-                    if submit_sale:
-                        supabase.table("sales").insert(sale_data).execute()
+                    supabase.table("sales").insert(custom_sale_data).execute()
+                    st.success(f"✅ Custom Sale Added Successfully! Total: ₹{custom_qty * custom_price}")
 
-                        new_qty = max(0, int(available_qty) - int(sell_qty))
-                        supabase.table("stock").update({"qty": new_qty}).eq("id", selected_item["id"]).execute()
+                    bill_details = (
+                        f"FAYAS FOOTWEAR (Direct Bill)\nDate: {custom_sale_date.strftime('%d/%m/%Y')}\n"
+                        f"Item: {custom_brand} ({custom_gender})\n"
+                        f"Art: {custom_art_no} | Size: {custom_size}\n"
+                        f"Qty: {custom_qty} x ₹{custom_price}\n"
+                        f"Total: ₹{custom_qty * custom_price}\n"
+                        f"Payment: {custom_payment}"
+                    )
+                    qr_img = generate_qr_code(bill_details)
 
-                        st.success(f"Sale Recorded ({payment_mode}) & Stock Deducted Successfully!")
+                    st.write("### 🧾 Custom Digital Receipt")
+                    st.text(bill_details)
+                    st.image(qr_img, caption="Scan QR for Digital Bill Receipt")
 
-                    if generate_qr_btn or submit_sale:
-                        bill_details = (
-                            f"FAYAS FOOTWEAR\nDate: {sale_date.strftime('%d/%m/%Y')}\n"
-                            f"Item: {selected_product} ({selected_gender})\n"
-                            f"Art: {selected_art_no} | Size: {selected_size}\n"
-                            f"Qty: {sell_qty} x ₹{selling_price}\n"
-                            f"Total: ₹{sell_qty * selling_price}\n"
-                            f"Payment: {payment_mode}"
-                        )
-                        qr_img = generate_qr_code(bill_details)
-
-                        st.write("### 🧾 Digital Receipt")
-                        st.text(bill_details)
-                        st.image(qr_img, caption="Scan QR for Digital Bill Receipt")
-
-    except Exception as e:
-        st.error(f"Error during quick sale: {e}")
+                except Exception as e:
+                    st.error(f"Failed to add custom sale: {e}")
 
 # ---------------------------------------------------------
 # 5. STOCK UPDATE / NEW ENTRY (MANUAL & BULK EXCEL IMPORT)
